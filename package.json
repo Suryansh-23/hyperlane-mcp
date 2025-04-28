@@ -7,7 +7,8 @@
     "hyperlane-mcp": "./build/index.js"
   },
   "scripts": {
-    "build": "tsc && chmod 755 build/index.js"
+    "build": "tsc && chmod 755 build/index.js",
+    "inspect": "pnpm build && npx @modelcontextprotocol/inspector node build/index.js"
   },
   "files": [
     "build"
@@ -23,15 +24,20 @@
     "@ethersproject/providers": "^5.8.0",
     "@ethersproject/wallet": "^5.8.0",
     "@hyperlane-xyz/registry": "^13.13.0",
-    "@hyperlane-xyz/sdk": "^4.0.0",
+    "@hyperlane-xyz/sdk": "^8.1.0",
     "@hyperlane-xyz/utils": "^12.3.0",
-    "@modelcontextprotocol/sdk": "^1.10.2",
-    "ethers": "^6.13.7",
+    "@modelcontextprotocol/sdk": "1.7.0",
+    "dotenv": "^16.5.0",
+    "ethers": "^5.7.2",
     "ethers-types": "^3.18.1",
+    "yaml": "^2.7.1",
+    "yargs": "^17.7.2",
     "zod": "^3.24.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.3",
+    "@types/yargs": "^17.0.33",
     "typescript": "^5.8.3"
-  }
+  },
+  "packageManager": "pnpm@10.9.0+sha512.0486e394640d3c1fb3c9d43d49cf92879ff74f8516959c235308f5a8f62e2e19528a65cdc2a3058f587cde71eba3d5b56327c8c33a97e4c4051ca48a10ca2d5f"
 }
