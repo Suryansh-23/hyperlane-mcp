@@ -1,11 +1,10 @@
-import { stringify as yamlStringify } from "yaml";
-
+import { BaseRegistry } from "@hyperlane-xyz/registry";
 import {
   ChainName,
   DispatchedMessage,
   HyperlaneCore,
-  HyperlaneRelayer,
   MultiProtocolProvider,
+  MultiProvider,
   ProviderType,
   Token,
   TokenAmount,
@@ -14,39 +13,24 @@ import {
 } from "@hyperlane-xyz/sdk";
 import { parseWarpRouteMessage, timeout } from "@hyperlane-xyz/utils";
 import { ContractReceipt } from "ethers";
-import { WriteCommandContext } from "./context.js";
-import { MINIMUM_TEST_SEND_GAS, EXPLORER_URL } from "./consts.js";
-import { runPreflightChecksForChains, stubMerkleTreeConfig } from "./utils.js";
 
-export const WarpSendLogs = {
-  SUCCESS: "Transfer was self-relayed!",
-};
-
-export async function sendTestTransfer({
-  context,
+export async function assetTransfer({
   warpCoreConfig,
   chains,
   amount,
   recipient,
-  timeoutSec,
+  registry,
+  multiProvider,
   skipWaitForDelivery,
-  selfRelay,
 }: {
-  context: WriteCommandContext;
   warpCoreConfig: WarpCoreConfig;
   chains: ChainName[];
   amount: string;
   recipient?: string;
-  timeoutSec: number;
-  skipWaitForDelivery: boolean;
-  selfRelay?: boolean;
+  registry: BaseRegistry;
+  multiProvider: MultiProvider;
+  skipWaitForDelivery?: boolean;
 }) {
-  await runPreflightChecksForChains({
-    context,
-    chains,
-    minGas: MINIMUM_TEST_SEND_GAS,
-  });
-
   for (let i = 0; i < chains.length; i++) {
     const origin = chains[i];
     const destination = chains[i + 1];
@@ -55,16 +39,16 @@ export async function sendTestTransfer({
       console.log(`Sending a message from ${origin} to ${destination}`);
       await timeout(
         executeDelivery({
-          context,
           origin,
           destination,
           warpCoreConfig,
           amount,
           recipient,
+          registry,
+          multiProvider,
           skipWaitForDelivery,
-          selfRelay,
         }),
-        timeoutSec * 1000,
+        120_000,
         "Timed out waiting for messages to be delivered"
       );
     }
@@ -72,26 +56,24 @@ export async function sendTestTransfer({
 }
 
 async function executeDelivery({
-  context,
   origin,
   destination,
   warpCoreConfig,
   amount,
   recipient,
-  skipWaitForDelivery,
-  selfRelay,
+  registry,
+  multiProvider,
+  skipWaitForDelivery = false,
 }: {
-  context: WriteCommandContext;
   origin: ChainName;
   destination: ChainName;
   warpCoreConfig: WarpCoreConfig;
   amount: string;
   recipient?: string;
-  skipWaitForDelivery: boolean;
-  selfRelay?: boolean;
+  registry: BaseRegistry;
+  multiProvider: MultiProvider;
+  skipWaitForDelivery?: boolean;
 }) {
-  const { multiProvider, registry } = context;
-
   const signer = multiProvider.getSigner(origin);
   const recipientSigner = multiProvider.getSigner(destination);
 
@@ -115,7 +97,7 @@ async function executeDelivery({
   let token: Token;
   const tokensForRoute = warpCore.getTokensForRoute(origin, destination);
   if (tokensForRoute.length === 0) {
-    console.error(`No Warp Routes found from ${origin} to ${destination}`);
+    // console.error(`No Warp Routes found from ${origin} to ${destination}`);
     throw new Error("Error finding warp route");
   } else if (tokensForRoute.length === 1) {
     token = tokensForRoute[0];
@@ -133,7 +115,7 @@ async function executeDelivery({
     sender: signerAddress,
   });
   if (errors) {
-    console.error("Error validating transfer", JSON.stringify(errors));
+    // console.error("Error validating transfer", JSON.stringify(errors));
     throw new Error("Error validating transfer");
   }
 
@@ -160,30 +142,17 @@ async function executeDelivery({
 
   const parsed = parseWarpRouteMessage(message.parsed.body);
 
-  console.info(
-    `Sent transfer from sender (${signerAddress}) on ${origin} to recipient (${recipient}) on ${destination}.`
-  );
-  console.info(`Message ID: ${message.id}`);
-  console.info(`Explorer Link: ${EXPLORER_URL}/message/${message.id}`);
-  console.log(`Message:\n${(yamlStringify(message, null, 2), 4)}`);
-  console.log(`Body:\n${(yamlStringify(parsed, null, 2), 4)}`);
-
-  if (selfRelay) {
-    const relayer = new HyperlaneRelayer({ core });
-
-    const hookAddress = await core.getSenderHookAddress(message);
-    const merkleAddress = chainAddresses[origin].merkleTreeHook;
-    stubMerkleTreeConfig(relayer, origin, hookAddress, merkleAddress);
-
-    console.log("Attempting self-relay of transfer...");
-    await relayer.relayMessage(transferTxReceipt, messageIndex, message);
-    console.log(WarpSendLogs.SUCCESS);
-    return;
-  }
+  // console.info(
+  //   `Sent transfer from sender (${signerAddress}) on ${origin} to recipient (${recipient}) on ${destination}.`
+  // );
+  // console.info(`Message ID: ${message.id}`);
+  // console.info(`Explorer Link: ${EXPLORER_URL}/message/${message.id}`);
+  // console.log(`Message:\n${(yamlStringify(message, null, 2), 4)}`);
+  // console.log(`Body:\n${(yamlStringify(parsed, null, 2), 4)}`);
 
   if (skipWaitForDelivery) return;
 
   // Max wait 10 minutes
   await core.waitForMessageProcessed(transferTxReceipt, 10000, 60);
-  console.log(`Transfer sent to ${destination} chain!`);
+  // console.log(`Transfer sent to ${destination} chain!`);
 }
