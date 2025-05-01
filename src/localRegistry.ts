@@ -15,9 +15,12 @@ import {
   WarpRouteDeployConfig,
 } from "@hyperlane-xyz/sdk";
 import crypto from "crypto";
+import { config } from "dotenv";
 import fs from "fs";
 import path from "path";
 import { stringify, parse } from "yaml";
+
+config();
 
 // Define internal types to match registry types
 interface WarpRouteFilterParams {
@@ -64,7 +67,7 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
     this.sourceRegistry = options.sourceRegistry;
     this.localStoragePath =
       options.storagePath ||
-      path.join(process.env.HOME || ".", ".hyperlane-mcp", "warp-routes");
+      path.join(process.env.HOME || ".", ".hyperlane-mcp");
 
     // Create local storage directory if it doesn't exist
     if (!fs.existsSync(this.localStoragePath)) {
@@ -255,7 +258,7 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
    * @returns Array of WarpCoreConfig objects that match the criteria (empty if none found)
    */
   async getWarpRoutesBySymbolAndChains(
-    symbol?: string,
+    symbol: string,
     chainNames?: string[]
   ): Promise<WarpCoreConfig[]> {
     try {
@@ -298,51 +301,6 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
     }
   }
 
-  /**
-   * Static utility method that can be used with any registry instance
-   * @param registry The registry instance to query (can be LocalRegistry or any IRegistry implementation)
-   * @param symbol Token symbol to search for
-   * @param chainNames Array of chain names that should all be included in the routes
-   * @returns Array of WarpCoreConfig objects that match the criteria (empty if none found)
-   */
-  static async getWarpRoutesBySymbolAndChains(
-    registry: IRegistry,
-    symbol: string,
-    chainNames: string[]
-  ): Promise<WarpCoreConfig[]> {
-    try {
-      // If the registry is LocalRegistry, use its method directly
-      if (registry instanceof LocalRegistry) {
-        return await registry.getWarpRoutesBySymbolAndChains(
-          symbol,
-          chainNames
-        );
-      }
-
-      // Otherwise, implement the same logic for any registry
-      const routes = symbol
-        ? await registry.getWarpRoutes({ symbol })
-        : await registry.getWarpRoutes();
-
-      if (!chainNames || chainNames.length === 0) {
-        return Object.values(routes);
-      }
-
-      return Object.values(routes).filter((config) => {
-        if (!config.tokens || config.tokens.length === 0) return false;
-
-        const routeChains = new Set(
-          config.tokens.map((token) => token.chainName)
-        );
-
-        return chainNames.every((chain) => routeChains.has(chain));
-      });
-    } catch (error) {
-      console.error("Error in static getWarpRoutesBySymbolAndChains:", error);
-      return [];
-    }
-  }
-
   async getWarpDeployConfigs(
     filter?: WarpRouteFilterParams
   ): Promise<WarpDeployConfigMap> {
@@ -365,7 +323,7 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
    * @returns Array of WarpRouteDeployConfig objects that match the criteria (empty if none found)
    */
   async getWarpDeployConfigsBySymbolAndChains(
-    symbol?: string,
+    symbol: string,
     chainNames?: string[]
   ): Promise<WarpRouteDeployConfig[]> {
     try {
@@ -394,52 +352,6 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
       console.error("Error in getWarpDeployConfigsBySymbolAndChains:", error);
       // Never raise an error, return empty array instead
       return [];
-    }
-  }
-
-  /**
-   * Parse a dynamic MCP resource URI to extract symbol and chain names
-   * URI format: hyperlane-warp://[symbol]/[chain1]-[chain2]-...-[chainN]
-   *
-   * @param uri The MCP resource URI to parse
-   * @returns Object containing parsed symbol and chainNames (if present)
-   */
-  static parseMcpResourceUri(uri: string): {
-    symbol?: string;
-    chainNames?: string[];
-  } {
-    try {
-      // Parse the URI
-      const url = new URL(uri);
-
-      // Check if it's a hyperlane-warp URI
-      if (url.protocol !== "hyperlane-warp:") {
-        return {};
-      }
-
-      // Extract path components
-      const pathComponents = url.pathname
-        .split("/")
-        .filter((p) => p.length > 0);
-
-      // Empty path means no filters
-      if (pathComponents.length === 0) {
-        return {};
-      }
-
-      // Extract symbol (first path component if present)
-      const symbol = pathComponents[0] || undefined;
-
-      // Extract chain names (second path component, split by hyphens)
-      const chainNames =
-        pathComponents.length > 1 && pathComponents[1]
-          ? pathComponents[1].split("-").filter((c) => c.length > 0)
-          : undefined;
-
-      return { symbol, chainNames };
-    } catch (error) {
-      console.error("Error parsing MCP resource URI:", error);
-      return {};
     }
   }
 }

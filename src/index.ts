@@ -112,11 +112,6 @@ server.server.setRequestHandler(
 );
 
 server.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-  server.server.sendLoggingMessage({
-    level: "info",
-    data: `Received request to read resource with URI: ${request.params.uri}`,
-  });
-
   const values = URI_TEMPLATE.fromUri(request.params.uri);
   server.server.sendLoggingMessage({
     level: "info",
@@ -127,12 +122,9 @@ server.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   if (!parsed.success) {
     throw new Error("Invalid URI parameters");
   }
-  server.server.sendLoggingMessage({
-    level: "info",
-    data: `Parsed URI object: ${JSON.stringify(parsed.data)}`,
-  });
 
-  const { symbol, chain } = parsed.data;
+  let { symbol, chain } = parsed.data;
+  chain = chain.filter((c) => c !== "");
   server.server.sendLoggingMessage({
     level: "info",
     data: `Fetching warp routes for symbol: ${typeof symbol}:${symbol} and chains: ${typeof chain}:${chain}`,
@@ -148,11 +140,6 @@ server.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     });
     throw new Error(`Error fetching warp routes: ${error}`);
   }
-
-  server.server.sendLoggingMessage({
-    level: "info",
-    data: JSON.stringify(warpRoutes, null, 2),
-  });
 
   return {
     contents: [
