@@ -8,13 +8,20 @@ import {
 } from "@hyperlane-xyz/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  ListResourceTemplatesRequestSchema,
+  ReadResourceRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 import { config } from "dotenv";
 import { ethers } from "ethers";
 import fs from "fs";
 import path from "path";
+import URITemplate from "uri-templates";
 import * as yaml from "yaml";
 import { z } from "zod";
+import { LocalRegistry } from "./localRegistry.js";
 import { msgTransfer } from "./msgTransfer.js";
+import { TYPE_CHOICES } from "./types.js";
 import { privateKeyToSigner } from "./utils.js";
 import { createWarpRouteDeployConfig, deployWarpRoute } from "./warpRoute.js";
 
@@ -41,6 +48,9 @@ const server = new McpServer(
           level: "info",
         },
       },
+      resources: {
+        subscribe: true,
+      },
     },
   }
 );
@@ -62,8 +72,98 @@ if (!key) {
 const signer = privateKeyToSigner(key);
 
 // Initialize Github Registry once for server
-const registry = new GithubRegistry({
+const githubRegistry = new GithubRegistry({
   authToken: process.env.GITHUB_TOKEN,
+});
+
+// Initialize Local Registry with Github Registry as source
+const registry = new LocalRegistry({
+  sourceRegistry: githubRegistry,
+});
+
+// console.log("getting warp routes...");
+// const warpRouteMap = await registry.getWarpRoutes();
+// Object.entries(warpRouteMap).forEach(([chain, routes]) =>
+//   console.log(`Chain: ${chain}, Routes: ${JSON.stringify(routes)}`)
+// );
+
+const URI_TEMPLATE_STRING = "hyperlane-warp:///{symbol}/{/chain*}";
+const URI_TEMPLATE = URITemplate(URI_TEMPLATE_STRING);
+const URI_OBJ_TEMPATE = z.object({
+  symbol: z.string(),
+  chain: z.array(z.string()),
+});
+
+server.server.setRequestHandler(
+  ListResourceTemplatesRequestSchema,
+  async () => {
+    return {
+      resourceTemplates: [
+        {
+          uriTemplate: URI_TEMPLATE_STRING,
+          name: "warpRoute",
+          description:
+            "Hyperlane Warp Route for the given combination of symbol and chains. This can be fetched and used for asset transfers between chains.",
+          mimeType: "application/json",
+        },
+      ],
+    };
+  }
+);
+
+server.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  server.server.sendLoggingMessage({
+    level: "info",
+    data: `Received request to read resource with URI: ${request.params.uri}`,
+  });
+
+  const values = URI_TEMPLATE.fromUri(request.params.uri);
+  server.server.sendLoggingMessage({
+    level: "info",
+    data: `Parsed URI values: ${JSON.stringify(values)}`,
+  });
+
+  const parsed = URI_OBJ_TEMPATE.safeParse(values);
+  if (!parsed.success) {
+    throw new Error("Invalid URI parameters");
+  }
+  server.server.sendLoggingMessage({
+    level: "info",
+    data: `Parsed URI object: ${JSON.stringify(parsed.data)}`,
+  });
+
+  const { symbol, chain } = parsed.data;
+  server.server.sendLoggingMessage({
+    level: "info",
+    data: `Fetching warp routes for symbol: ${typeof symbol}:${symbol} and chains: ${typeof chain}:${chain}`,
+  });
+
+  let warpRoutes;
+  try {
+    warpRoutes = await registry.getWarpRoutesBySymbolAndChains(symbol, chain);
+  } catch (error) {
+    server.server.sendLoggingMessage({
+      level: "error",
+      data: `Error fetching warp routes: ${error}`,
+    });
+    throw new Error(`Error fetching warp routes: ${error}`);
+  }
+
+  server.server.sendLoggingMessage({
+    level: "info",
+    data: JSON.stringify(warpRoutes, null, 2),
+  });
+
+  return {
+    contents: [
+      {
+        uri: request.params.uri,
+        name: `Hyperlane Warp Route for ${symbol} on ${chain.join("-")}`,
+        mimeType: "application/json",
+        text: JSON.stringify(warpRoutes, null, 2),
+      },
+    ],
+  };
 });
 
 server.tool(
@@ -157,36 +257,6 @@ Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}
     };
   }
 );
-
-const TYPE_DESCRIPTIONS: Record<TokenType, string> = {
-  [TokenType.synthetic]: "A new ERC20 with remote transfer functionality",
-  [TokenType.syntheticRebase]: `A rebasing ERC20 with remote transfer functionality. Must be paired with ${TokenType.collateralVaultRebase}`,
-  [TokenType.collateral]:
-    "Extends an existing ERC20 with remote transfer functionality",
-  [TokenType.native]:
-    "Extends the native token with remote transfer functionality",
-  [TokenType.collateralVault]:
-    "Extends an existing ERC4626 with remote transfer functionality. Yields are manually claimed by owner.",
-  [TokenType.collateralVaultRebase]:
-    "Extends an existing ERC4626 with remote transfer functionality. Rebases yields to token holders.",
-  [TokenType.collateralFiat]:
-    "Extends an existing FiatToken with remote transfer functionality",
-  [TokenType.XERC20]:
-    "Extends an existing xERC20 with Warp Route functionality",
-  [TokenType.XERC20Lockbox]:
-    "Extends an existing xERC20 Lockbox with Warp Route functionality",
-  // TODO: describe
-  [TokenType.syntheticUri]: "",
-  [TokenType.collateralUri]: "",
-  [TokenType.nativeScaled]: "",
-  [TokenType.fastSynthetic]: "",
-  [TokenType.fastCollateral]: "",
-};
-export const TYPE_CHOICES = Object.values(TokenType).map((type) => ({
-  name: type,
-  value: type,
-  description: TYPE_DESCRIPTIONS[type],
-}));
 
 server.tool(
   "deploy-warp-route",

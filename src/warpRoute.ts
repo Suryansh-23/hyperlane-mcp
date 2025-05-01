@@ -25,9 +25,7 @@ import {
 import { assert, objMap, ProtocolType } from "@hyperlane-xyz/utils";
 import fs from "fs";
 import { stringify } from "yaml";
-import { writeYaml } from "./file.js";
-import { TYPE_CHOICES } from "./index.js";
-import { WarpRouteDeployConfigMailboxRequired } from "./types.js";
+import { TYPE_CHOICES, WarpRouteDeployConfigMailboxRequired } from "./types.js";
 
 function restrictChoices(typeChoices: TokenType[]) {
   return TYPE_CHOICES.filter((choice) => typeChoices.includes(choice.name));
@@ -182,7 +180,7 @@ export async function createWarpRouteDeployConfig({
     const warpRouteDeployConfig = WarpRouteDeployConfigSchema.parse(result);
     // logBlue(`Warp Route config is valid, writing to file ${outPath}:\n`);
     // log(indentYamlOrJson(yamlStringify(warpRouteDeployConfig, null, 2), 4));
-    writeYaml(outPath, warpRouteDeployConfig);
+    // writeYaml(outPath, warpRouteDeployConfig);
     // logGreen("✅ Successfully created new warp route deployment config.");
     return warpRouteDeployConfig;
   } catch (e) {

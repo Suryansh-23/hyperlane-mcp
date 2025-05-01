@@ -3,6 +3,7 @@ import {
   HookType,
   HyperlaneRelayer,
   MultiProvider,
+  WarpCoreConfig,
 } from "@hyperlane-xyz/sdk";
 import { ensure0x, ProtocolType } from "@hyperlane-xyz/utils";
 import { ethers } from "ethers";

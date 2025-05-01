@@ -19,11 +19,19 @@ export function writeFileAtPath(filepath: string, value: string) {
   fs.writeFileSync(filepath, value);
 }
 
-export function writeYaml(filepath: string, obj: any) {
-  writeFileAtPath(
-    filepath,
-    stringify(obj, { indent: 2, sortMapEntries: true }) + "\n"
-  );
+export function findFilesMatchingRegex(
+  directoryPath: string,
+  pattern: RegExp
+): string[] {
+  try {
+    const entries = fs.readdirSync(directoryPath);
+    return entries
+      .map((entry) => path.join(directoryPath, entry))
+      .filter((filepath) => {
+        const stat = fs.statSync(filepath);
+        return stat.isFile() && pattern.test(filepath);
+      });
+  } catch (error) {
+    throw new Error(`Error searching directory ${directoryPath}: ${error}`);
+  }
 }
-
-
