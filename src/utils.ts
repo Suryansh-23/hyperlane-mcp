@@ -6,7 +6,7 @@ import {
 } from "@hyperlane-xyz/sdk";
 import { ensure0x, ProtocolType } from "@hyperlane-xyz/utils";
 import { ethers } from "ethers";
-import { WriteCommandContext } from "./context.js";
+
 import { IRegistry } from "@hyperlane-xyz/registry";
 
 /**
@@ -78,41 +78,41 @@ export async function nativeBalancesAreSufficient(
   }
 }
 
-export async function runPreflightChecksForChains({
-  context,
-  chains,
-  minGas,
-  chainsToGasCheck,
-}: {
-  context: WriteCommandContext;
-  chains: ChainName[];
-  minGas: string;
-  // Chains for which to assert a native balance
-  // Defaults to all chains if not specified
-  chainsToGasCheck?: ChainName[];
-}) {
-  // log('Running pre-flight checks for chains...');
-  const { multiProvider, skipConfirmation } = context;
+// export async function runPreflightChecksForChains({
+//   context,
+//   chains,
+//   minGas,
+//   chainsToGasCheck,
+// }: {
+//   context: WriteCommandContext;
+//   chains: ChainName[];
+//   minGas: string;
+//   // Chains for which to assert a native balance
+//   // Defaults to all chains if not specified
+//   chainsToGasCheck?: ChainName[];
+// }) {
+//   // log('Running pre-flight checks for chains...');
+//   const { multiProvider, skipConfirmation } = context;
 
-  if (!chains?.length) throw new Error("Empty chain selection");
-  for (const chain of chains) {
-    const metadata = multiProvider.tryGetChainMetadata(chain);
-    if (!metadata) throw new Error(`No chain config found for ${chain}`);
-    if (metadata.protocol !== ProtocolType.Ethereum)
-      throw new Error("Only Ethereum chains are supported for now");
-    const signer = multiProvider.getSigner(chain);
-    assertSigner(signer);
-    //   logGreen(`✅ ${metadata.displayName ?? chain} signer is valid`);
-  }
-  // logGreen('✅ Chains are valid');
+//   if (!chains?.length) throw new Error("Empty chain selection");
+//   for (const chain of chains) {
+//     const metadata = multiProvider.tryGetChainMetadata(chain);
+//     if (!metadata) throw new Error(`No chain config found for ${chain}`);
+//     if (metadata.protocol !== ProtocolType.Ethereum)
+//       throw new Error("Only Ethereum chains are supported for now");
+//     const signer = multiProvider.getSigner(chain);
+//     assertSigner(signer);
+//     //   logGreen(`✅ ${metadata.displayName ?? chain} signer is valid`);
+//   }
+//   // logGreen('✅ Chains are valid');
 
-  await nativeBalancesAreSufficient(
-    multiProvider,
-    chainsToGasCheck ?? chains,
-    minGas,
-    skipConfirmation
-  );
-}
+//   await nativeBalancesAreSufficient(
+//     multiProvider,
+//     chainsToGasCheck ?? chains,
+//     minGas,
+//     skipConfirmation
+//   );
+// }
 
 export function stubMerkleTreeConfig(
   relayer: HyperlaneRelayer,
