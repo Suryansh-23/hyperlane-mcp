@@ -74,12 +74,11 @@ This server connects LLM assistants to the Hyperlane ecosystem, enabling them to
    ```
    Edit the `.env` file with your configuration:
    ```
-   # RPC URLs for different networks
-   ETHEREUM_RPC_URL=your_ethereum_rpc_url
-   POLYGON_RPC_URL=your_polygon_rpc_url
-   # Add other network RPC URLs as needed
 
-   # Optional: Private key for transactions
+   # Required for Github Registry
+   GITHUB_TOKEN= your_github_pat
+   
+   # Required: Private key for signing transactions
    PRIVATE_KEY=your_private_key
    ```
 
