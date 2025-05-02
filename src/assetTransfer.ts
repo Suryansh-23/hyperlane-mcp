@@ -19,40 +19,42 @@ export async function assetTransfer({
   chains,
   amount,
   recipient,
-  registry,
   multiProvider,
-  skipWaitForDelivery,
 }: {
   warpCoreConfig: WarpCoreConfig;
   chains: ChainName[];
   amount: string;
   recipient?: string;
-  registry: BaseRegistry;
   multiProvider: MultiProvider;
-  skipWaitForDelivery?: boolean;
-}) {
+}): Promise<[ContractReceipt, DispatchedMessage][]> {
+  const results: [ContractReceipt, DispatchedMessage][] = [];
   for (let i = 0; i < chains.length; i++) {
     const origin = chains[i];
     const destination = chains[i + 1];
 
     if (destination) {
-      console.log(`Sending a message from ${origin} to ${destination}`);
-      await timeout(
+      const deliveryResult = await timeout(
         executeDelivery({
           origin,
           destination,
           warpCoreConfig,
           amount,
           recipient,
-          registry,
           multiProvider,
-          skipWaitForDelivery,
         }),
         120_000,
         "Timed out waiting for messages to be delivered"
       );
+
+      if (deliveryResult) {
+        const [dispatchTx, message] = deliveryResult;
+        results.push([dispatchTx, message]);
+      } else {
+        break;
+      }
     }
   }
+  return results;
 }
 
 async function executeDelivery({
@@ -61,19 +63,15 @@ async function executeDelivery({
   warpCoreConfig,
   amount,
   recipient,
-  registry,
   multiProvider,
-  skipWaitForDelivery = false,
 }: {
   origin: ChainName;
   destination: ChainName;
   warpCoreConfig: WarpCoreConfig;
   amount: string;
   recipient?: string;
-  registry: BaseRegistry;
   multiProvider: MultiProvider;
-  skipWaitForDelivery?: boolean;
-}) {
+}): Promise<[ContractReceipt, DispatchedMessage]> {
   const signer = multiProvider.getSigner(origin);
   const recipientSigner = multiProvider.getSigner(destination);
 
@@ -81,10 +79,6 @@ async function executeDelivery({
   const signerAddress = await signer.getAddress();
 
   recipient ||= recipientAddress;
-
-  const chainAddresses = await registry.getAddresses();
-
-  const core = HyperlaneCore.fromAddressesMap(chainAddresses, multiProvider);
 
   const provider = multiProvider.getProvider(origin);
   const connectedSigner = signer.connect(provider);
@@ -135,24 +129,12 @@ async function executeDelivery({
       txReceipts.push(txReceipt);
     }
   }
-  const transferTxReceipt = txReceipts[txReceipts.length - 1];
+  const dispatchTx = txReceipts[txReceipts.length - 1];
   const messageIndex: number = 0;
   const message: DispatchedMessage =
-    HyperlaneCore.getDispatchedMessages(transferTxReceipt)[messageIndex];
+    HyperlaneCore.getDispatchedMessages(dispatchTx)[messageIndex];
 
   const parsed = parseWarpRouteMessage(message.parsed.body);
 
-  // console.info(
-  //   `Sent transfer from sender (${signerAddress}) on ${origin} to recipient (${recipient}) on ${destination}.`
-  // );
-  // console.info(`Message ID: ${message.id}`);
-  // console.info(`Explorer Link: ${EXPLORER_URL}/message/${message.id}`);
-  // console.log(`Message:\n${(yamlStringify(message, null, 2), 4)}`);
-  // console.log(`Body:\n${(yamlStringify(parsed, null, 2), 4)}`);
-
-  if (skipWaitForDelivery) return;
-
-  // Max wait 10 minutes
-  await core.waitForMessageProcessed(transferTxReceipt, 10000, 60);
-  // console.log(`Transfer sent to ${destination} chain!`);
+  return [dispatchTx, message];
 }

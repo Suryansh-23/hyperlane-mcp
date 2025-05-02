@@ -4,6 +4,7 @@ import {
   ChainMetadata,
   MultiProvider,
   TokenType,
+  WarpCoreConfigSchema,
   WarpRouteDeployConfig,
 } from "@hyperlane-xyz/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -19,6 +20,7 @@ import path from "path";
 import URITemplate from "uri-templates";
 import * as yaml from "yaml";
 import { z } from "zod";
+import { assetTransfer } from "./assetTransfer.js";
 import { LocalRegistry } from "./localRegistry.js";
 import { msgTransfer } from "./msgTransfer.js";
 import { TYPE_CHOICES } from "./types.js";
@@ -80,12 +82,6 @@ const githubRegistry = new GithubRegistry({
 const registry = new LocalRegistry({
   sourceRegistry: githubRegistry,
 });
-
-// console.log("getting warp routes...");
-// const warpRouteMap = await registry.getWarpRoutes();
-// Object.entries(warpRouteMap).forEach(([chain, routes]) =>
-//   console.log(`Chain: ${chain}, Routes: ${JSON.stringify(routes)}`)
-// );
 
 const URI_TEMPLATE_STRING = "hyperlane-warp:///{symbol}/{/chain*}";
 const URI_TEMPLATE = URITemplate(URI_TEMPLATE_STRING);
@@ -239,6 +235,122 @@ Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}
         {
           type: "text",
           text: `Message dispatched successfully. Transaction Hash: ${dispatchTx.transactionHash}.\n Message ID for the dispatched message: ${message.id}`,
+        },
+      ],
+    };
+  }
+);
+
+server.tool(
+  "cross-chain-asset-transfer",
+  "Transfers an asset across chains for the specified token (specified in the WarpCoreConfig), amount, chains and recipient.\n" +
+    "You can use the `deploy-warp-route` tool to deploy a warp route for the asset and chains.\n" +
+    "You can use the `list-resources` tool to fetch the warp route config for the asset and chains.\n" +
+    "This tool returns the transaction hash and message ID for the dispatched messages for each transfer between the chains.",
+  {
+    chains: z
+      .array(z.string())
+      .describe("Chains to transfer asset between in order of transfer"),
+    amount: z.string().describe("Amount to transfer"),
+    recipient: z
+      .string()
+      .length(42)
+      .regex(/^0x[a-fA-F0-9]{40}$/, "Invalid EVM address")
+      .optional()
+      .default(signer.address)
+      .describe("Recipient address"),
+    warpCoreConfig: WarpCoreConfigSchema.describe(
+      "Warp core config for the asset transfer.\n" +
+        "You can use fetch the warp route config using the resources.\n" +
+        "If the warp config for the asset & chains doesn't exist. You can create it using the deploy-warp-route tool.\n" +
+        "So, please make sure that a warp route config exists for the asset & chains before using this tool."
+    ),
+  },
+  async ({ chains, amount, recipient, warpCoreConfig }) => {
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: `Starting cross-chain asset transfer...
+Parameters: chains=${chains.join(
+        ", "
+      )}, amount=${amount}, recipient=${recipient}, warpCoreConfig=${JSON.stringify(
+        warpCoreConfig,
+        null,
+        2
+      )}`,
+    });
+
+    const chainMetadata: ChainMap<ChainMetadata> = Object.fromEntries(
+      await Promise.all(
+        chains.map(async (chain) => [
+          chain,
+          (await registry.getChainMetadata(chain))!,
+        ])
+      )
+    );
+
+    const multiProvider = new MultiProvider(chainMetadata, {
+      signers: Object.fromEntries(chains.map((chain) => [chain, signer])),
+      providers: Object.fromEntries(
+        await Promise.all(
+          chains.map(async (chain) => [
+            chain,
+            new ethers.providers.JsonRpcProvider(
+              chainMetadata[chain].rpcUrls[0].http
+            ),
+          ])
+        )
+      ),
+    });
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: `MultiProvider initialized with chains: ${JSON.stringify(
+        multiProvider,
+        null,
+        2
+      )}`,
+    });
+
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: "Initiating asset transfer...",
+    });
+
+    const deliveryResult = await assetTransfer({
+      warpCoreConfig,
+      chains,
+      amount,
+      recipient,
+      multiProvider,
+    });
+    if (!deliveryResult || deliveryResult.length !== chains.length - 1) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error in asset transfer. No delivery result couldn't be generated`,
+          },
+        ],
+      };
+    }
+
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: "Message transfer completed successfully",
+    });
+
+    return {
+      content: [
+        {
+          mimeType: "application/json",
+          type: "text",
+          text: JSON.stringify(
+            deliveryResult.map(([dispatchTx, message]) => ({
+              transactionHash: dispatchTx.transactionHash,
+              messageId: message.id,
+            })),
+            null,
+            2
+          ),
         },
       ],
     };
