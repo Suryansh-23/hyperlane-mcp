@@ -109,8 +109,7 @@ async function executeDelivery({
     sender: signerAddress,
   });
   if (errors) {
-    // console.error("Error validating transfer", JSON.stringify(errors));
-    throw new Error("Error validating transfer");
+    console.error("Error validating transfer: ", JSON.stringify(errors));
   }
 
   // TODO: override hook address for self-relay

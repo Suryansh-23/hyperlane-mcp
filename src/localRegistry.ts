@@ -41,7 +41,7 @@ type WarpDeployConfigMap = Record<string, WarpRouteDeployConfig>;
 
 export interface LocalRegistryOptions {
   sourceRegistry: IRegistry;
-  storagePath?: string;
+  storagePath: string;
   logger?: any; // Match BaseRegistry's constructor parameter
 }
 
@@ -56,24 +56,12 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
   private localWarpDeployConfigs: WarpDeployConfigMap = {};
   private localStoragePath: string;
 
-  // Define Model Context Protocol resource URIs for this registry
-  static readonly MCP_ROUTES_URI = "hyperlane-warp://registry/warp-routes";
-  static readonly MCP_DEPLOY_CONFIG_URI_BASE = "hyperlane-warp://";
-
   constructor(options: LocalRegistryOptions) {
     // Pass logger to BaseRegistry constructor if provided
     super(options.logger);
 
     this.sourceRegistry = options.sourceRegistry;
-    this.localStoragePath =
-      options.storagePath ||
-      path.join(process.env.HOME || ".", ".hyperlane-mcp");
-
-    // Create local storage directory if it doesn't exist
-    if (!fs.existsSync(this.localStoragePath)) {
-      fs.mkdirSync(this.localStoragePath, { recursive: true });
-    }
-
+    this.localStoragePath = options.storagePath;
     // Initialize local storage from existing files
     this.loadLocalStorage();
   }
@@ -258,7 +246,7 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
    * @returns Array of WarpCoreConfig objects that match the criteria (empty if none found)
    */
   async getWarpRoutesBySymbolAndChains(
-    symbol: string,
+    symbol?: string,
     chainNames?: string[]
   ): Promise<WarpCoreConfig[]> {
     try {

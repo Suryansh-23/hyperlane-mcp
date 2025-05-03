@@ -5,7 +5,6 @@ import {
   MultiProvider,
   TokenType,
   WarpCoreConfigSchema,
-  WarpRouteDeployConfig,
 } from "@hyperlane-xyz/sdk";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -18,7 +17,6 @@ import { ethers } from "ethers";
 import fs from "fs";
 import path from "path";
 import URITemplate from "uri-templates";
-import * as yaml from "yaml";
 import { z } from "zod";
 import { assetTransfer } from "./assetTransfer.js";
 import { LocalRegistry } from "./localRegistry.js";
@@ -58,12 +56,15 @@ const server = new McpServer(
 );
 
 // Create directory for hyperlane-mcp if it doesn't exist
-const homeDir = process.env.HOME!;
+const homeDir = process.env.CACHE_DIR || process.env.HOME;
+let mcpDir;
 if (homeDir) {
-  const mcpDir = path.join(homeDir, ".hyperlane-mcp");
+  mcpDir = path.join(homeDir, ".hyperlane-mcp");
   if (!fs.existsSync(mcpDir)) {
     fs.mkdirSync(mcpDir);
   }
+} else {
+  throw new Error("HOME environment variable is not set");
 }
 
 // init key
@@ -75,19 +76,21 @@ const signer = privateKeyToSigner(key);
 
 // Initialize Github Registry once for server
 const githubRegistry = new GithubRegistry({
-  authToken: process.env.GITHUB_TOKEN,
+  authToken: process.env.GITHUB_TOKEN || "",
 });
 
 // Initialize Local Registry with Github Registry as source
 const registry = new LocalRegistry({
   sourceRegistry: githubRegistry,
+  storagePath: mcpDir,
 });
+const HYPERLANE_CHAINS = await registry.getChains();
 
 const URI_TEMPLATE_STRING = "hyperlane-warp:///{symbol}/{/chain*}";
 const URI_TEMPLATE = URITemplate(URI_TEMPLATE_STRING);
 const URI_OBJ_TEMPATE = z.object({
   symbol: z.string(),
-  chain: z.array(z.string()),
+  chain: z.array(z.enum(HYPERLANE_CHAINS as [string, ...string[]])),
 });
 
 server.server.setRequestHandler(
@@ -99,7 +102,8 @@ server.server.setRequestHandler(
           uriTemplate: URI_TEMPLATE_STRING,
           name: "warpRoute",
           description:
-            "Hyperlane Warp Route for the given combination of symbol and chains. This can be fetched and used for asset transfers between chains.",
+            "Hyperlane Warp Route for the given combination of symbol and chains. This can be fetched and used for asset transfers between chains. \n" +
+            "You must call this before cros-chain-asset-transfer tool to fetch the warp route config.",
           mimeType: "application/json",
         },
       ],
@@ -153,8 +157,12 @@ server.tool(
   "cross-chain-message-transfer",
   "Transfers a cross-chain message.",
   {
-    origin: z.string().describe("Origin chain"),
-    destination: z.string().describe("Destination chain"),
+    origin: z
+      .enum(HYPERLANE_CHAINS as [string, ...string[]])
+      .describe("Origin chain"),
+    destination: z
+      .enum(HYPERLANE_CHAINS as [string, ...string[]])
+      .describe("Destination chain"),
     recipient: z
       .string()
       .length(42)
@@ -249,9 +257,12 @@ server.tool(
     "This tool returns the transaction hash and message ID for the dispatched messages for each transfer between the chains.",
   {
     chains: z
-      .array(z.string())
+      .array(z.enum(HYPERLANE_CHAINS as [string, ...string[]]))
       .describe("Chains to transfer asset between in order of transfer"),
-    amount: z.string().describe("Amount to transfer"),
+    amount: z
+      .string()
+      .regex(/^(?:0|[1-9]\d*)$/)
+      .describe("Amount to transfer"),
     recipient: z
       .string()
       .length(42)
@@ -259,26 +270,37 @@ server.tool(
       .optional()
       .default(signer.address)
       .describe("Recipient address"),
-    warpCoreConfig: WarpCoreConfigSchema.describe(
-      "Warp core config for the asset transfer.\n" +
-        "You can use fetch the warp route config using the resources.\n" +
-        "If the warp config for the asset & chains doesn't exist. You can create it using the deploy-warp-route tool.\n" +
-        "So, please make sure that a warp route config exists for the asset & chains before using this tool."
-    ),
+    symbol: z.string().describe("Symbol of the asset to transfer"),
+    // warpCoreConfig: WarpCoreConfigSchema.describe(
+    //   "Warp core config for the asset transfer.\n" +
+    //     "You can use fetch the warp route config using the resources.\n" +
+    //     "If the warp config for the asset & chains doesn't exist. You can create it using the deploy-warp-route tool.\n" +
+    //     "So, please make sure that a warp route config exists for the asset & chains before using this tool."
+    // ).optional(),
   },
-  async ({ chains, amount, recipient, warpCoreConfig }) => {
+  async ({ chains, amount, recipient, symbol }) => {
     server.server.sendLoggingMessage({
       level: "info",
       data: `Starting cross-chain asset transfer...
 Parameters: chains=${chains.join(
         ", "
-      )}, amount=${amount}, recipient=${recipient}, warpCoreConfig=${JSON.stringify(
-        warpCoreConfig,
-        null,
-        2
-      )}`,
+      )}, amount=${amount}, recipient=${recipient}, symbol=${symbol}`,
     });
 
+    const warpConfigs = await registry.getWarpRoutesBySymbolAndChains(
+      symbol,
+      chains
+    );
+
+    if (warpConfigs.length === 0) {
+      throw new Error(
+        `No warp route config found for symbol: ${symbol} and chains: ${chains.join(
+          ", "
+        )}. Please deploy a warp route using the \`deploy-warp-route\` tool.`
+      );
+    }
+
+    const warpCoreConfig = warpConfigs[0];
     const chainMetadata: ChainMap<ChainMetadata> = Object.fromEntries(
       await Promise.all(
         chains.map(async (chain) => [
@@ -359,10 +381,11 @@ Parameters: chains=${chains.join(
 
 server.tool(
   "deploy-warp-route",
-  "Deploys a warp route.",
+  "Deploys a warp route. Before deploying a warp route, use the `list-resources` tool to fetch the warp route config for similar asset and chains.\n" +
+    "Thsis will give you an idea of what to config in `tokenTypes`.",
   {
     warpChains: z
-      .array(z.string())
+      .array(z.enum(HYPERLANE_CHAINS as [string, ...string[]]))
       .describe("Warp chains to deploy the route on"),
     tokenTypes: z
       .array(
@@ -373,6 +396,10 @@ server.tool(
       .describe("Token types to deploy"),
   },
   async ({ warpChains, tokenTypes }) => {
+    if (warpChains.length !== tokenTypes.length) {
+      throw new Error("Warp chains and token types must have the same length");
+    }
+
     server.server.sendLoggingMessage({
       level: "info",
       data: `Deploying warp route with chains: ${warpChains.join(
@@ -384,23 +411,24 @@ server.tool(
       warpChains.map((chain, i) => `${chain}:${tokenTypes[i]}`).join("-") +
       ".yaml";
 
-    let warpRouteConfig: WarpRouteDeployConfig;
     const filePath = path.join(homeDir, ".hyperlane-mcp", fileName);
+    const existingConfig = await registry.getWarpRoutesBySymbolAndChains(
+      undefined,
+      warpChains
+    );
 
-    if (fs.existsSync(filePath)) {
+    if (existingConfig && existingConfig.length > 0) {
       server.server.sendLoggingMessage({
         level: "info",
-        data: `Warp Route Already exists @ ${fileName} already exists. Skipping Config Creation.`,
+        data: `Warp Route already exists. Skipping Config Creation.`,
       });
 
-      const fileContent = fs.readFileSync(filePath, "utf-8");
-      warpRouteConfig = yaml.parse(fileContent) as WarpRouteDeployConfig;
-
+      const warpRouteConfig = existingConfig[0];
       return {
         content: [
           {
             type: "text",
-            text: `Warp Route Config already exists @ ${fileName}. Skipping Config Creation. Config: ${JSON.stringify(
+            text: `Warp Route Config already exists. Skipping Config Creation. Config: ${JSON.stringify(
               warpRouteConfig,
               null,
               2
@@ -408,31 +436,29 @@ server.tool(
           },
         ],
       };
-    } else {
-      server.server.sendLoggingMessage({
-        level: "info",
-        data: `Creating Warp Route Config @ ${fileName}`,
-      });
-
-      warpRouteConfig = await createWarpRouteDeployConfig({
-        warpChains,
-        tokenTypes: tokenTypes.map(
-          (t) => TokenType[t as keyof typeof TokenType]
-        ),
-        signerAddress: signer.address,
-        registry,
-        outPath: "./warpRouteDeployConfig.yaml",
-      });
-
-      server.server.sendLoggingMessage({
-        level: "info",
-        data: `Warp route deployment config created: ${JSON.stringify(
-          warpRouteConfig,
-          null,
-          2
-        )}`,
-      });
     }
+
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: `Creating Warp Route Config @ ${fileName}`,
+    });
+
+    const warpRouteDeployConfig = await createWarpRouteDeployConfig({
+      warpChains,
+      tokenTypes: tokenTypes.map((t) => TokenType[t as keyof typeof TokenType]),
+      signerAddress: signer.address,
+      registry,
+      outPath: "./warpRouteDeployConfig.yaml",
+    });
+
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: `Warp route deployment config created: ${JSON.stringify(
+        warpRouteDeployConfig,
+        null,
+        2
+      )}`,
+    });
 
     const chainMetadata: ChainMap<ChainMetadata> = {};
     for (const chain of warpChains) {
@@ -447,14 +473,14 @@ server.tool(
       registry,
       chainMetadata,
       multiProvider,
-      warpRouteConfig,
+      warpRouteDeployConfig,
       filePath,
     });
 
     server.server.sendLoggingMessage({
       level: "info",
       data: `Warp route deployed successfully. Config: ${JSON.stringify(
-        warpRouteConfig,
+        warpRouteDeployConfig,
         null,
         2
       )}`,
@@ -478,7 +504,7 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Hello World MCP Server running on stdio");
+  console.error("Hyperlane-MCP server running on stdio");
 }
 
 main().catch((error) => {
