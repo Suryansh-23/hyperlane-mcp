@@ -20,10 +20,12 @@ import   { Address } from "@hyperlane-xyz/utils";
 import { ProtocolType } from "@hyperlane-xyz/utils";
 import { ethers, BigNumber } from "ethers";
 import { stringify as yamlStringify } from "yaml";
+import { writeYamlOrJson } from "./configOpts.js";
 
 import { ChainConfig } from "./types.js";
 import { addNativeTokenConfig  , createMerkleTreeConfig , createMultisignConfig} from "./config.js";
-import { privateKeyToSigner } from "./utils.js";
+import { confirmExistingMailbox, privateKeyToSigner , requestAndSaveApiKeys, transformChainMetadataForDisplay , assertSigner , nativeBalancesAreSufficient, filterAddresses, getStartBlocks, handleMissingInterchainGasPaymaster, validateAgentConfig } from "./utils.js";
+import { MINIMUM_CORE_DEPLOY_GAS } from "./consts.js";
 
 export async function prepareDeploy(
     userAddress : Address | null , 
@@ -44,6 +46,76 @@ export async function prepareDeploy(
     );
 
     return initialBalances ; 
+}
+
+
+export async function runDeployPlanStep(
+    chainMetadata : ChainMap<ChainMetadata> , 
+    chain : ChainName , 
+    multiProvider : MultiProvider
+) { 
+
+    
+    const address = multiProvider.getSigner(chain).getAddress() ; 
+    const transformChainMetadata = transformChainMetadataForDisplay(
+        chainMetadata[chain]
+    )
+
+    console.log("\nDeployment plan");
+    console.log("===============");
+    console.log(
+        `Transaction signer and owner of new contracts: ${address}`
+    );
+    console.log(`Deploying core contracts to network: ${chain}`);
+
+
+    confirmExistingMailbox( chain )
+
+
+}
+
+
+export async function runPreflightChecksForChains(
+    multiProvider : MultiProvider , 
+    chains :  ChainName[] , 
+    minGas : string , 
+    chainsToGasCheck? : ChainName[]
+) { 
+    if (!chains?.length) throw new Error("Empty chain selection");
+
+    for (const chain of chains) {
+        const metadata = multiProvider.tryGetChainMetadata(chain);
+        if (!metadata) throw new Error(`No chain config found for ${chain}`);
+        if (metadata.protocol !== ProtocolType.Ethereum)
+            throw new Error("Only Ethereum chains are supported for now");
+        const signer = multiProvider.getSigner(chain);
+        assertSigner(signer);
+        //   logGreen(`✅ ${metadata.displayName ?? chain} signer is valid`);
+    }
+
+    await nativeBalancesAreSufficient(
+        multiProvider,
+        chainsToGasCheck ?? chains,
+        minGas,
+    );
+
+
+}
+
+export async function completeDeploy(
+    multiProvider : MultiProvider , 
+    initialBalances: Record<string, BigNumber>,
+    userAddress: Address | null,
+    chains: ChainName[]
+) {
+    if (chains.length > 0) console.log(`⛽️ Gas Usage Statistics`);
+    for (const chain of chains) {
+        const provider = multiProvider.getProvider(chain);
+        const address =
+            userAddress ?? (await multiProvider.getSigner(chain).getAddress());
+        const currentBalance = await provider.getBalance(address);
+        const balanceDelta = initialBalances[chain].sub(currentBalance);
+    }
 }
 
 
@@ -123,7 +195,7 @@ export async function InitializeDeployment () {
 
 }
 
-export async function runCoreDeploy ( config : ChainConfig ) { 
+export async function runCoreDeploy ( config : ChainConfig , registry : BaseRegistry ) { 
     if (!process.env.PRIVATE_KEY) {
         throw new Error("PRIVATE_KEY environment variable is required");
     }
@@ -147,11 +219,78 @@ export async function runCoreDeploy ( config : ChainConfig ) {
 
     const userAddress = signer.address ; 
     const chain = config.chainName
+    let apiKeys = await requestAndSaveApiKeys([chain], chainMetadata, registry);
 
     const initialBalances = await prepareDeploy( userAddress , [chain] , multiProvider  )
 
 
     //TODO : implementation of furter steps
+
+
+    await runDeployPlanStep( chainMetadata , chain , multiProvider  )
+
+    await runPreflightChecksForChains( multiProvider , [chain] , MINIMUM_CORE_DEPLOY_GAS )
+
+    const contractVerifier = new ContractVerifier(
+        multiProvider , 
+        apiKeys , 
+        coreBuildArtifact , 
+        ExplorerLicenseType.MIT
+    );
+
+
+    const evmCoreModule = await EvmCoreModule.create({ 
+        chain , 
+        config , //To be fetched rather its the incorrect one rather 
+        multiProvider , 
+        contractVerifier 
+    })
+
+    await completeDeploy( multiProvider , initialBalances , userAddress , [chain] )
+
+
+    const deployedAddress = evmCoreModule.serialize()
+
+    console.log(deployedAddress)
 }
 
+export async function createAgentConfigs (
+    registry: BaseRegistry , 
+    multiProvider: MultiProvider ,
+    chains ?: string [] , 
+    out : string
+) {
+    const addresses = await registry.getAddresses();
 
+    const chainAddresses = filterAddresses(addresses, chains);
+    if (!chainAddresses) {
+        console.error("No chain addresses found");
+        throw new Error("No chain addresses found");
+    }
+
+    const core = HyperlaneCore.fromAddressesMap(chainAddresses, multiProvider);
+
+    const startBlocks = await getStartBlocks(
+        chainAddresses,
+        core,
+        chainMetadata
+    );
+
+    await handleMissingInterchainGasPaymaster(chainAddresses);
+
+    const agentConfig = buildAgentConfig(
+        Object.keys(chainAddresses),
+        multiProvider,
+        chainAddresses as ChainMap<HyperlaneDeploymentArtifacts>,
+        startBlocks
+    );
+
+    await validateAgentConfig(agentConfig);
+
+    console.log(`\nWriting agent config to file ${out}`);
+
+    writeYamlOrJson(out, agentConfig, "json");
+
+    console.log(`Agent config written to ${out}`);
+
+}
