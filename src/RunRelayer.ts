@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import path from "path";
 import fs from "fs";
+import { ChainName } from "@hyperlane-xyz/sdk";
 
 const docker = new Docker();
 
@@ -12,13 +13,19 @@ const createDirectory = (directoryPath: string): void => {
   }
 };
 
-// Class for running a Relayer
+export interface RelayerConfig {
+  relayChains: ChainName[];
+  relayerKey: string;
+  configFilePath: string;
+  validatorChainName: string;
+}
+
 export class RelayerRunner {
-  private relayChains: string[];
-  private relayerKey: string;
-  private configFilePath: string;
-  private relayerDbPath: string;
-  private validatorSignaturesDir: string;
+  private readonly relayChains: ChainName[];
+  private readonly relayerKey: string;
+  private readonly configFilePath: string;
+  private readonly relayerDbPath: string;
+  private readonly validatorSignaturesDir: string;
   private containerId: string | null = null;
 
   constructor(relayChains: string[], relayerKey: string, configFilePath: string, validatorChainName: string) {
@@ -34,86 +41,100 @@ export class RelayerRunner {
 
   async run(): Promise<void> {
     try {
-      console.log(`Pulling latest Hyperlane agent Docker image...`);
-      await docker.pull("gcr.io/abacus-labs-dev/hyperlane-agent:agents-v1.1.0", (err: Error | null, stream: NodeJS.ReadableStream) => {
-        if (err) {
-          console.error("Error pulling Docker image:", err);
-          return;
-        }
-        docker.modem.followProgress(stream, onFinished, onProgress);
-
-        function onFinished(err: Error | null, result: any[]) {
-          if (err) {
-            console.error("Error pulling Docker image:", err);
-          } else {
-            console.log("Docker image pulled successfully.");
-          }
-        }
-
-        function onProgress(event: any) {
-          console.log("Downloading Docker image...", event);
-        }
-      });
-
-      console.log(`Creating container for relayer on chains: ${this.relayChains.join(", ")}...`);
-      const container = await docker.createContainer({
-        Image: "gcr.io/abacus-labs-dev/hyperlane-agent:agents-v1.1.0",
-        Env: [`CONFIG_FILES=/config/agent-config.json`],
-        HostConfig: {
-          Mounts: [
-            {
-              Source: path.resolve(this.configFilePath),
-              Target: "/config/agent-config.json",
-              Type: "bind",
-              ReadOnly: true,
-            },
-            {
-              Source: this.relayerDbPath,
-              Target: "/hyperlane_db",
-              Type: "bind",
-            },
-            {
-              Source: this.validatorSignaturesDir,
-              Target: "/tmp/validator-signatures",
-              Type: "bind",
-              ReadOnly: true,
-            },
-          ],
-        },
-        Cmd: [
-          "./relayer",
-          "--db",
-          "/hyperlane_db",
-          "--relayChains",
-          this.relayChains.join(","),
-          "--allowLocalCheckpointSyncers",
-          "true",
-          "--defaultSigner.key",
-          this.relayerKey,
-        ],
-        Tty: true,
-      });
-
-      this.containerId = container.id;
-
-      console.log(`Starting relayer for chains: ${this.relayChains.join(", ")}...`);
-      await container.start();
-      console.log(`Relayer for chains: ${this.relayChains.join(", ")} started successfully.`);
-
-      console.log("Fetching container logs...");
-      const logStream = await container.logs({
-        follow: true,
-        stdout: true,
-        stderr: true,
-      });
-      logStream.on("data", (chunk) => {
-        console.log(chunk.toString());
-      });
-
-      console.log("Relayer is now running. Monitoring logs...");
+      await this.pullDockerImage();
+      await this.createAndStartContainer();
+      await this.monitorLogs();
     } catch (error) {
       console.error(`Error starting relayer for chains: ${this.relayChains.join(", ")}`, error);
+      throw error;
     }
+  }
+
+  private async pullDockerImage(): Promise<void> {
+    console.log(`Pulling latest Hyperlane agent Docker image...`);
+    await new Promise<void>((resolve, reject) => {
+      docker.pull("gcr.io/abacus-labs-dev/hyperlane-agent:agents-v1.1.0", (err: Error | null, stream: NodeJS.ReadableStream) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        docker.modem.followProgress(stream, 
+          (err: Error | null) => {
+            if (err) reject(err);
+            else resolve();
+          },
+          (event: any) => {
+            console.log("Downloading Docker image...", event);
+          }
+        );
+      });
+    });
+  }
+
+  private async createAndStartContainer(): Promise<void> {
+    console.log(`Creating container for relayer on chains: ${this.relayChains.join(", ")}...`);
+    const container = await docker.createContainer({
+      Image: "gcr.io/abacus-labs-dev/hyperlane-agent:agents-v1.1.0",
+      Env: [`CONFIG_FILES=/config/agent-config.json`],
+      HostConfig: {
+        Mounts: [
+          {
+            Source: path.resolve(this.configFilePath),
+            Target: "/config/agent-config.json",
+            Type: "bind",
+            ReadOnly: true,
+          },
+          {
+            Source: this.relayerDbPath,
+            Target: "/hyperlane_db",
+            Type: "bind",
+          },
+          {
+            Source: this.validatorSignaturesDir,
+            Target: "/tmp/validator-signatures",
+            Type: "bind",
+            ReadOnly: true,
+          },
+        ],
+      },
+      Cmd: [
+        "./relayer",
+        "--db",
+        "/hyperlane_db",
+        "--relayChains",
+        this.relayChains.join(","),
+        "--allowLocalCheckpointSyncers",
+        "true",
+        "--defaultSigner.key",
+        this.relayerKey,
+      ],
+      Tty: true,
+    });
+
+    this.containerId = container.id;
+
+    console.log(`Starting relayer for chains: ${this.relayChains.join(", ")}...`);
+    await container.start();
+    console.log(`Relayer for chains: ${this.relayChains.join(", ")} started successfully.`);
+  }
+
+  private async monitorLogs(): Promise<void> {
+    if (!this.containerId) {
+      throw new Error("Container ID not set");
+    }
+
+    const container = docker.getContainer(this.containerId);
+    console.log("Fetching container logs...");
+    const logStream = await container.logs({
+      follow: true,
+      stdout: true,
+      stderr: true,
+    });
+    logStream.on("data", (chunk) => {
+      console.log(chunk.toString());
+    });
+
+    console.log("Relayer is now running. Monitoring logs...");
   }
 
   async checkStatus(): Promise<void> {
@@ -127,6 +148,7 @@ export class RelayerRunner {
       }
     } catch (error) {
       console.error("Error checking container status:", error);
+      throw error;
     }
   }
 }

@@ -23,9 +23,17 @@ import { z } from "zod";
 import { assetTransfer } from "./assetTransfer.js";
 import { LocalRegistry } from "./localRegistry.js";
 import { msgTransfer } from "./msgTransfer.js";
-import { TYPE_CHOICES } from "./types.js";
+import { TYPE_CHOICES, ChainConfig } from "./types.js";
 import { privateKeyToSigner } from "./utils.js";
 import { createWarpRouteDeployConfig, deployWarpRoute } from "./warpRoute.js";
+import { 
+    runCoreDeploy, 
+    saveChainDeployConfig, 
+    loadChainDeployConfig,
+    CoreDeployConfig 
+} from "./hyperlaneDeployer.js";
+import { ValidatorRunner } from "./RunValidator.js";
+import { RelayerRunner } from "./RunRelayer.js";
 
 // Load environment variables from .env file
 config();
@@ -472,6 +480,175 @@ server.tool(
         },
       ],
     };
+  }
+);
+
+server.tool(
+  "deploy-chain",
+  "Deploys a new chain to the Hyperlane network.",
+  {
+    chainName: z.string().describe("Name of the chain to deploy"),
+    chainId: z.number().describe("Chain ID of the chain to deploy"),
+    rpcUrl: z.string().url().describe("RPC URL for the chain"),
+    tokenSymbol: z.string().describe("Native token symbol"),
+    tokenName: z.string().describe("Native token name"),
+    isTestnet: z.boolean().default(false).describe("Whether this is a testnet chain"),
+  },
+  async ({ chainName, chainId, rpcUrl, tokenSymbol, tokenName, isTestnet }) => {
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: `Starting chain deployment for ${chainName}...`,
+    });
+
+    const fileName = `chain-${chainName}-${chainId}.yaml`;
+    const filePath = path.join(homeDir, ".hyperlane-mcp", fileName);
+
+    // Check if config already exists
+    if (fs.existsSync(filePath)) {
+      server.server.sendLoggingMessage({
+        level: "info",
+        data: `Chain deployment config already exists @ ${fileName}. Using existing config.`,
+      });
+
+      const fileContent = fs.readFileSync(filePath, "utf-8");
+      const chainConfig = yaml.parse(fileContent) as ChainConfig;
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Chain deployment config already exists @ ${fileName}. Skipping Config Creation. Config: ${JSON.stringify(
+              chainConfig,
+              null,
+              2
+            )}`,
+          },
+        ],
+      };
+    }
+
+    // Create new chain config
+    const chainConfig = {
+      chainName,
+      chainId,
+      rpcUrl,
+      tokenSymbol,
+      tokenName,
+      isTestnet,
+    };
+
+    // Save the config
+    fs.writeFileSync(filePath, yaml.stringify(chainConfig, null, 2));
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: `Chain deployment config saved to ${filePath}`,
+    });
+
+    // Deploy the chain
+    const deployConfig: CoreDeployConfig = {
+      config: chainConfig,
+      registry,
+    };
+
+    try {
+      await runCoreDeploy(deployConfig);
+      server.server.sendLoggingMessage({
+        level: "info",
+        data: `Chain deployment completed successfully for ${chainName}`,
+      });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Chain deployment completed successfully for ${chainName}. Config saved to ${fileName}. Config: ${JSON.stringify(
+              chainConfig,
+              null,
+              2
+            )}`,
+          },
+        ],
+      };
+    } catch (error) {
+      server.server.sendLoggingMessage({
+        level: "error",
+        data: `Error deploying chain ${chainName}: ${error}`,
+      });
+      throw error;
+    }
+  }
+);
+
+server.tool(
+  "run-validator",
+  "Runs a validator for a specific chain.",
+  {
+    chainName: z.string().describe("Name of the chain to validate"),
+    validatorKey: z.string().describe("Private key for the validator"),
+    configFilePath: z.string().describe("Path to the agent config file"),
+  },
+  async ({ chainName, validatorKey, configFilePath }) => {
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: `Starting validator for chain: ${chainName}...`,
+    });
+
+    try {
+      const validatorRunner = new ValidatorRunner(chainName, validatorKey, configFilePath);
+      await validatorRunner.run();
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Validator started successfully for chain: ${chainName}`,
+          },
+        ],
+      };
+    } catch (error) {
+      server.server.sendLoggingMessage({
+        level: "error",
+        data: `Error starting validator for chain ${chainName}: ${error}`,
+      });
+      throw error;
+    }
+  }
+);
+
+server.tool(
+  "run-relayer",
+  "Runs a relayer for specified chains.",
+  {
+    relayChains: z.array(z.string()).describe("Chains to relay between"),
+    relayerKey: z.string().describe("Private key for the relayer"),
+    configFilePath: z.string().describe("Path to the agent config file"),
+    validatorChainName: z.string().describe("Name of the validator chain"),
+  },
+  async ({ relayChains, relayerKey, configFilePath, validatorChainName }) => {
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: `Starting relayer for chains: ${relayChains.join(", ")}...`,
+    });
+
+    try {
+      const relayerRunner = new RelayerRunner(relayChains, relayerKey, configFilePath, validatorChainName);
+      await relayerRunner.run();
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Relayer started successfully for chains: ${relayChains.join(", ")}`,
+          },
+        ],
+      };
+    } catch (error) {
+      server.server.sendLoggingMessage({
+        level: "error",
+        data: `Error starting relayer for chains ${relayChains.join(", ")}: ${error}`,
+      });
+      throw error;
+    }
   }
 );
 

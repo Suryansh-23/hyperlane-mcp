@@ -1,5 +1,5 @@
 import { buildArtifact as coreBuildArtifact } from "@hyperlane-xyz/core/buildArtifact.js";
-import { BaseRegistry, chainMetadata , GithubRegistry } from "@hyperlane-xyz/registry";
+import { BaseRegistry, chainMetadata, GithubRegistry } from "@hyperlane-xyz/registry";
 import {
     buildAgentConfig,
     ChainMap,
@@ -7,6 +7,7 @@ import {
     ChainMetadataSchema,
     ChainName,
     ContractVerifier,
+    CoreConfig,
     CoreConfigSchema,
     EvmCoreModule,
     ExplorerLicenseType,
@@ -16,71 +17,81 @@ import {
     MultiProvider,
     OwnableConfig,
 } from "@hyperlane-xyz/sdk";
-import   { Address } from "@hyperlane-xyz/utils";
-import { ProtocolType } from "@hyperlane-xyz/utils";
+import { Address, ProtocolType } from "@hyperlane-xyz/utils";
 import { ethers, BigNumber } from "ethers";
 import { stringify as yamlStringify } from "yaml";
 import { writeYamlOrJson } from "./configOpts.js";
+import path from "path";
+import fs from "fs";
 
 import { ChainConfig } from "./types.js";
-import { addNativeTokenConfig  , createMerkleTreeConfig , createMultisignConfig} from "./config.js";
-import { confirmExistingMailbox, privateKeyToSigner , requestAndSaveApiKeys, transformChainMetadataForDisplay , assertSigner , nativeBalancesAreSufficient, filterAddresses, getStartBlocks, handleMissingInterchainGasPaymaster, validateAgentConfig } from "./utils.js";
+import { addNativeTokenConfig, createMerkleTreeConfig, createMultisignConfig } from "./config.js";
+import {
+    confirmExistingMailbox,
+    privateKeyToSigner,
+    requestAndSaveApiKeys,
+    transformChainMetadataForDisplay,
+    assertSigner,
+    nativeBalancesAreSufficient,
+    filterAddresses,
+    getStartBlocks,
+    handleMissingInterchainGasPaymaster,
+    validateAgentConfig
+} from "./utils.js";
 import { MINIMUM_CORE_DEPLOY_GAS } from "./consts.js";
 
-export async function prepareDeploy(
-    userAddress : Address | null , 
-    chains : ChainName[] , 
-    multiProvider : MultiProvider
-): Promise< Record<string , BigNumber>  >  {
-   
-    const initialBalances : Record<string , BigNumber> = {}
+export interface DeployConfig {
+    userAddress: Address | null;
+    chains: ChainName[];
+    multiProvider: MultiProvider;
+}
+
+export interface ChainConfigOptions {
+    config: ChainConfig;
+    wantNativeTokenConfig: boolean;
+    registry: BaseRegistry;
+}
+
+export interface CoreDeployConfig {
+    config: ChainConfig;
+    registry: BaseRegistry;
+}
+
+export async function prepareDeploy(config: DeployConfig): Promise<Record<string, BigNumber>> {
+    const initialBalances: Record<string, BigNumber> = {};
     await Promise.all(
-        chains.map(async (chain: ChainName) => {
-            const provider = multiProvider.getProvider(chain);
-            const address =
-                userAddress ??
-                (await multiProvider.getSigner(chain).getAddress());
+        config.chains.map(async (chain: ChainName) => {
+            const provider = config.multiProvider.getProvider(chain);
+            const address = config.userAddress ?? (await config.multiProvider.getSigner(chain).getAddress());
             const currentBalance = await provider.getBalance(address);
             initialBalances[chain] = currentBalance;
         })
     );
-
-    return initialBalances ; 
+    return initialBalances;
 }
 
-
 export async function runDeployPlanStep(
-    chainMetadata : ChainMap<ChainMetadata> , 
-    chain : ChainName , 
-    multiProvider : MultiProvider
-) { 
-
-    
-    const address = multiProvider.getSigner(chain).getAddress() ; 
-    const transformChainMetadata = transformChainMetadataForDisplay(
-        chainMetadata[chain]
-    )
+    chainMetadata: ChainMap<ChainMetadata>,
+    chain: ChainName,
+    multiProvider: MultiProvider
+): Promise<void> {
+    const address = await multiProvider.getSigner(chain).getAddress();
+    const transformChainMetadata = transformChainMetadataForDisplay(chainMetadata[chain]);
 
     console.log("\nDeployment plan");
     console.log("===============");
-    console.log(
-        `Transaction signer and owner of new contracts: ${address}`
-    );
+    console.log(`Transaction signer and owner of new contracts: ${address}`);
     console.log(`Deploying core contracts to network: ${chain}`);
 
-
-    confirmExistingMailbox( chain )
-
-
+    await confirmExistingMailbox(chain);
 }
 
-
 export async function runPreflightChecksForChains(
-    multiProvider : MultiProvider , 
-    chains :  ChainName[] , 
-    minGas : string , 
-    chainsToGasCheck? : ChainName[]
-) { 
+    multiProvider: MultiProvider,
+    chains: ChainName[],
+    minGas: string,
+    chainsToGasCheck?: ChainName[]
+): Promise<void> {
     if (!chains?.length) throw new Error("Empty chain selection");
 
     for (const chain of chains) {
@@ -90,7 +101,6 @@ export async function runPreflightChecksForChains(
             throw new Error("Only Ethereum chains are supported for now");
         const signer = multiProvider.getSigner(chain);
         assertSigner(signer);
-        //   logGreen(`✅ ${metadata.displayName ?? chain} signer is valid`);
     }
 
     await nativeBalancesAreSufficient(
@@ -98,51 +108,43 @@ export async function runPreflightChecksForChains(
         chainsToGasCheck ?? chains,
         minGas,
     );
-
-
 }
 
 export async function completeDeploy(
-    multiProvider : MultiProvider , 
+    multiProvider: MultiProvider,
     initialBalances: Record<string, BigNumber>,
     userAddress: Address | null,
     chains: ChainName[]
-) {
+): Promise<void> {
     if (chains.length > 0) console.log(`⛽️ Gas Usage Statistics`);
     for (const chain of chains) {
         const provider = multiProvider.getProvider(chain);
-        const address =
-            userAddress ?? (await multiProvider.getSigner(chain).getAddress());
+        const address = userAddress ?? (await multiProvider.getSigner(chain).getAddress());
         const currentBalance = await provider.getBalance(address);
         const balanceDelta = initialBalances[chain].sub(currentBalance);
+        console.log(`${chain}: ${ethers.utils.formatEther(balanceDelta)} ETH`);
     }
 }
 
-
-export async function createChainConfig({
-    config  , 
-    wantNativeTokenConfig , 
-    registry
-} :  { 
-    config : ChainConfig, 
-    wantNativeTokenConfig : boolean, 
-    registry : BaseRegistry
-}) {
-    const provider = new ethers.providers.JsonRpcProvider(config.rpcUrl); 
-    const metadata : ChainMetadata = {
-        name : config.chainName , 
-        displayName : config.chainName, 
-        chainId : config.chainId , 
-        domainId: Number(config.chainId) , 
-        protocol : ProtocolType.Ethereum , 
-        rpcUrls : [{
-            http : config.rpcUrl 
+export async function createChainConfig(options: ChainConfigOptions): Promise<void> {
+    const provider = new ethers.providers.JsonRpcProvider(options.config.rpcUrl);
+    const metadata: ChainMetadata = {
+        name: options.config.chainName,
+        displayName: options.config.chainName,
+        chainId: options.config.chainId,
+        domainId: Number(options.config.chainId),
+        protocol: ProtocolType.Ethereum,
+        rpcUrls: [{
+            http: options.config.rpcUrl
         }],
+        isTestnet: options.config.isTestnet
+    };
 
-        isTestnet : config.isTestnet 
-
-    }
-    await addNativeTokenConfig(metadata , { tokenSymbol : config.tokenSymbol , tokenName : config.tokenName } , wantNativeTokenConfig); // adds the token config as well
+    await addNativeTokenConfig(
+        metadata,
+        { tokenSymbol: options.config.tokenSymbol, tokenName: options.config.tokenName },
+        options.wantNativeTokenConfig
+    );
 
     const parseResult = ChainMetadataSchema.safeParse(metadata);
 
@@ -152,18 +154,16 @@ export async function createChainConfig({
             sortMapEntries: true,
         });
 
-        await registry.addChain({ chainName: metadata.name, metadata });
+        await options.registry.addChain({ chainName: metadata.name, metadata });
 
-        console.log("Chain metadata created" , metadataYaml);
+        console.log("Chain metadata created", metadataYaml);
     } else {
-        console.log(parseResult.error);
-        console.error("Error in creating chain metadata");
-        throw new Error("Error in creating chain metadata" ,);
+        console.error(parseResult.error);
+        throw new Error("Error in creating chain metadata");
     }
-
 }
 
-export async function InitializeDeployment () { 
+export async function InitializeDeployment(): Promise<CoreConfig> {
     const defaultIsm = await createMultisignConfig(IsmType.MERKLE_ROOT_MULTISIG);
     const defaultHook = await createMerkleTreeConfig();
     const requiredHook = await createMerkleTreeConfig();
@@ -173,11 +173,11 @@ export async function InitializeDeployment () {
     }
     const owner = await privateKeyToSigner(process.env.PRIVATE_KEY);
 
-    const proxyAdmin : OwnableConfig = { 
-        owner : owner.address
-    }
+    const proxyAdmin: OwnableConfig = {
+        owner: owner.address
+    };
 
-    try { 
+    try {
         const coreConfig = CoreConfigSchema.parse({
             owner,
             defaultIsm,
@@ -186,96 +186,83 @@ export async function InitializeDeployment () {
             proxyAdmin,
         });
 
-        return coreConfig ; 
-
-    }catch(e) { 
-        console.log(e);
+        return coreConfig;
+    } catch (e) {
+        console.error(e);
         throw new Error("Error in creating core config");
     }
-
 }
 
-export async function runCoreDeploy ( config : ChainConfig , registry : BaseRegistry ) { 
+export async function runCoreDeploy(config: CoreDeployConfig): Promise<void> {
     if (!process.env.PRIVATE_KEY) {
         throw new Error("PRIVATE_KEY environment variable is required");
     }
     const signer = await privateKeyToSigner(process.env.PRIVATE_KEY);
-    const metadata : ChainMetadata = {
-        name : config.chainName , 
-        displayName : config.chainName, 
-        chainId : config.chainId , 
-        domainId: Number(config.chainId) , 
-        protocol : ProtocolType.Ethereum , 
-        rpcUrls : [{
-            http : config.rpcUrl 
+    const metadata: ChainMetadata = {
+        name: config.config.chainName,
+        displayName: config.config.chainName,
+        chainId: config.config.chainId,
+        domainId: Number(config.config.chainId),
+        protocol: ProtocolType.Ethereum,
+        rpcUrls: [{
+            http: config.config.rpcUrl
         }],
+        isTestnet: config.config.isTestnet
+    };
 
-        isTestnet : config.isTestnet 
-
-    }
     const multiProvider = new MultiProvider({
-        [config.chainName]: metadata
-    })
+        [config.config.chainName]: metadata
+    });
 
-    const userAddress = signer.address ; 
-    const chain = config.chainName
-    let apiKeys = await requestAndSaveApiKeys([chain], chainMetadata, registry);
+    const userAddress = signer.address;
+    const chain = config.config.chainName;
+    const apiKeys = await requestAndSaveApiKeys([chain], chainMetadata, config.registry);
 
-    const initialBalances = await prepareDeploy( userAddress , [chain] , multiProvider  )
+    const initialBalances = await prepareDeploy({
+        userAddress,
+        chains: [chain],
+        multiProvider
+    });
 
-
-    //TODO : implementation of furter steps
-
-
-    await runDeployPlanStep( chainMetadata , chain , multiProvider  )
-
-    await runPreflightChecksForChains( multiProvider , [chain] , MINIMUM_CORE_DEPLOY_GAS )
+    await runDeployPlanStep(chainMetadata, chain, multiProvider);
+    await runPreflightChecksForChains(multiProvider, [chain], MINIMUM_CORE_DEPLOY_GAS);
 
     const contractVerifier = new ContractVerifier(
-        multiProvider , 
-        apiKeys , 
-        coreBuildArtifact , 
+        multiProvider,
+        apiKeys,
+        coreBuildArtifact,
         ExplorerLicenseType.MIT
     );
 
+    const coreConfig = await InitializeDeployment();
+    const evmCoreModule = await EvmCoreModule.create({
+        chain,
+        config: coreConfig,
+        multiProvider,
+        contractVerifier
+    });
 
-    const evmCoreModule = await EvmCoreModule.create({ 
-        chain , 
-        config , //To be fetched rather its the incorrect one rather 
-        multiProvider , 
-        contractVerifier 
-    })
+    await completeDeploy(multiProvider, initialBalances, userAddress, [chain]);
 
-    await completeDeploy( multiProvider , initialBalances , userAddress , [chain] )
-
-
-    const deployedAddress = evmCoreModule.serialize()
-
-    console.log(deployedAddress)
+    const deployedAddress = evmCoreModule.serialize();
+    console.log(deployedAddress);
 }
 
-export async function createAgentConfigs (
-    registry: BaseRegistry , 
-    multiProvider: MultiProvider ,
-    chains ?: string [] , 
-    out : string
-) {
+export async function createAgentConfigs(
+    registry: BaseRegistry,
+    multiProvider: MultiProvider,
+    out: string,
+    chains?: string[]
+): Promise<void> {
     const addresses = await registry.getAddresses();
-
     const chainAddresses = filterAddresses(addresses, chains);
+    
     if (!chainAddresses) {
-        console.error("No chain addresses found");
         throw new Error("No chain addresses found");
     }
 
     const core = HyperlaneCore.fromAddressesMap(chainAddresses, multiProvider);
-
-    const startBlocks = await getStartBlocks(
-        chainAddresses,
-        core,
-        chainMetadata
-    );
-
+    const startBlocks = await getStartBlocks(chainAddresses, core, chainMetadata);
     await handleMissingInterchainGasPaymaster(chainAddresses);
 
     const agentConfig = buildAgentConfig(
@@ -286,11 +273,35 @@ export async function createAgentConfigs (
     );
 
     await validateAgentConfig(agentConfig);
-
     console.log(`\nWriting agent config to file ${out}`);
-
     writeYamlOrJson(out, agentConfig, "json");
-
     console.log(`Agent config written to ${out}`);
+}
 
+export function getChainDeployConfigPath(chainName: string): string {
+    const homeDir = process.env.HOME || ".";
+    const mcpDir = path.join(homeDir, ".hyperlane-mcp");
+    
+    // Create directory if it doesn't exist
+    if (!fs.existsSync(mcpDir)) {
+        fs.mkdirSync(mcpDir, { recursive: true });
+    }
+    
+    return path.join(mcpDir, `chain-${chainName}-deploy.yaml`);
+}
+
+export async function saveChainDeployConfig(config: ChainConfig): Promise<string> {
+    const filePath = getChainDeployConfigPath(config.chainName);
+    await writeYamlOrJson(filePath, config, "yaml");
+    return filePath;
+}
+
+export async function loadChainDeployConfig(chainName: string): Promise<ChainConfig | null> {
+    const filePath = getChainDeployConfigPath(chainName);
+    if (!fs.existsSync(filePath)) {
+        return null;
+    }
+    
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return yamlStringify.parse(content) as ChainConfig;
 }
