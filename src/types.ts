@@ -40,3 +40,17 @@ export const TYPE_CHOICES = Object.values(TokenType).map((type) => ({
   value: type,
   description: TYPE_DESCRIPTIONS[type],
 }));
+
+export interface ChainConfig { 
+  chainName : string , 
+  chainId  : string|number , 
+  rpcUrl : string , 
+  isTestnet : boolean , 
+  tokenSymbol ?: string, 
+  tokenName ?: string 
+}
+
+export interface ChainTokenConfig { 
+  tokenSymbol ?: string , 
+  tokenName ?: string  
+}

@@ -115,6 +115,9 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
 
     console.log(`Warp route added with ID: ${routeId}`);
   }
+  
+  //TODO : add chain functionality
+  //TODO  : update chain functionality 
 
   private generateRouteId(config: WarpCoreConfig, symbol?: string): string {
     // Create a deterministic ID based on the token connections
@@ -168,12 +171,12 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
     return this.sourceRegistry.getChainAddresses(chainName);
   }
 
-  async addChain(_chains: UpdateChainParams): Promise<void> {
-    throw new Error("Method not implemented in LocalRegistry");
+  async addChain(chains: UpdateChainParams): Promise<void> {
+    return this.sourceRegistry.addChain(chains)
   }
 
-  async updateChain(_chains: UpdateChainParams): Promise<void> {
-    throw new Error("Method not implemented in LocalRegistry");
+  async updateChain(chains: UpdateChainParams): Promise<void> {
+   return this.sourceRegistry.updateChain(chains)
   }
 
   async removeChain(_chains: ChainName): Promise<void> {
