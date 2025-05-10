@@ -26,14 +26,21 @@ import { msgTransfer } from "./msgTransfer.js";
 import { TYPE_CHOICES, ChainConfig } from "./types.js";
 import { privateKeyToSigner } from "./utils.js";
 import { createWarpRouteDeployConfig, deployWarpRoute } from "./warpRoute.js";
+
 import { 
     runCoreDeploy, 
     saveChainDeployConfig, 
+    createChainConfig, 
     loadChainDeployConfig,
-    CoreDeployConfig 
+    CoreDeployConfig , 
+    createAgentConfigs, 
+    InitializeDeployment, 
+
 } from "./hyperlaneDeployer.js";
 import { ValidatorRunner } from "./RunValidator.js";
 import { RelayerRunner } from "./RunRelayer.js";
+import { Protocol } from "@modelcontextprotocol/sdk/shared/protocol.js";
+import { ProtocolType } from "@hyperlane-xyz/utils";
 
 // Load environment variables from .env file
 config();
@@ -495,87 +502,76 @@ server.tool(
     isTestnet: z.boolean().default(false).describe("Whether this is a testnet chain"),
   },
   async ({ chainName, chainId, rpcUrl, tokenSymbol, tokenName, isTestnet }) => {
-    server.server.sendLoggingMessage({
-      level: "info",
-      data: `Starting chain deployment for ${chainName}...`,
-    });
+    const homeDir = process.env.HOME ; 
+    const existingConfig = await loadChainDeployConfig(chainName);
 
-    const fileName = `chain-${chainName}-${chainId}.yaml`;
-    const filePath = path.join(homeDir, ".hyperlane-mcp", fileName);
-
-    // Check if config already exists
-    if (fs.existsSync(filePath)) {
+    if (existingConfig) {
       server.server.sendLoggingMessage({
         level: "info",
-        data: `Chain deployment config already exists @ ${fileName}. Using existing config.`,
+        data: `Chain deployment config already exists for ${chainName}. Using existing config.`,
       });
-
-      const fileContent = fs.readFileSync(filePath, "utf-8");
-      const chainConfig = yaml.parse(fileContent) as ChainConfig;
 
       return {
         content: [
           {
             type: "text",
-            text: `Chain deployment config already exists @ ${fileName}. Skipping Config Creation. Config: ${JSON.stringify(
-              chainConfig,
-              null,
-              2
-            )}`,
+            text: `Chain config already exists. Skipping config creation.\n${JSON.stringify(existingConfig, null, 2)}`,
           },
         ],
       };
     }
 
-    // Create new chain config
-    const chainConfig = {
-      chainName,
-      chainId,
-      rpcUrl,
-      tokenSymbol,
-      tokenName,
-      isTestnet,
-    };
+    // Step 1: Create Chain Config + Save
+    const chainConfig = { chainName, chainId, rpcUrl, tokenSymbol, tokenName, isTestnet };
+    const registry = new GithubRegistry(); // or any other registry implementation you're using
 
-    // Save the config
-    fs.writeFileSync(filePath, yaml.stringify(chainConfig, null, 2));
-    server.server.sendLoggingMessage({
-      level: "info",
-      data: `Chain deployment config saved to ${filePath}`,
-    });
-
-    // Deploy the chain
-    const deployConfig: CoreDeployConfig = {
+    await createChainConfig({
       config: chainConfig,
+      wantNativeTokenConfig: true,
       registry,
+    });
+
+    await saveChainDeployConfig(chainConfig);
+
+    // Step 2: Deploy Core Contracts
+    const deployConfig = { config: chainConfig, registry };
+
+    
+    await runCoreDeploy(deployConfig);
+
+    // Step 3: Create Agent Configs
+    const metadata = {
+      [chainName]: {
+        name: chainName,
+        displayName: chainName,
+        chainId,
+        domainId: chainId,
+        protocol: ProtocolType.Ethereum,
+        rpcUrls: [{ http: rpcUrl }],
+        isTestnet,
+      }
+    } as ChainMap<ChainMetadata> ; 
+
+    const multiProvider = new MultiProvider(metadata);
+
+   
+    const outPath = path.join(homeDir!, ".hyperlane-mcp", `agent-config-${chainName}.json`);
+
+    await createAgentConfigs(registry, multiProvider, outPath, [chainName]);
+
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: `✅ Chain deployment and agent config creation complete for ${chainName}`,
+    });
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `✅ Successfully deployed ${chainName} and generated agent config.\n\nSaved config: ${JSON.stringify(chainConfig, null, 2)}`,
+        },
+      ],
     };
-
-    try {
-      await runCoreDeploy(deployConfig);
-      server.server.sendLoggingMessage({
-        level: "info",
-        data: `Chain deployment completed successfully for ${chainName}`,
-      });
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Chain deployment completed successfully for ${chainName}. Config saved to ${fileName}. Config: ${JSON.stringify(
-              chainConfig,
-              null,
-              2
-            )}`,
-          },
-        ],
-      };
-    } catch (error) {
-      server.server.sendLoggingMessage({
-        level: "error",
-        data: `Error deploying chain ${chainName}: ${error}`,
-      });
-      throw error;
-    }
   }
 );
 
