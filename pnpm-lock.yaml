@@ -33,8 +33,8 @@ importers:
         specifier: ^8.2.0
         version: 8.9.0(@axelar-network/axelar-gmp-sdk-solidity@5.10.0)(@ethersproject/abi@5.8.0)(@ethersproject/providers@5.8.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))(@nomicfoundation/hardhat-verify@2.0.13(hardhat@2.23.0(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)))(@types/sinon-chai@4.0.0)(bufferutil@4.0.9)(fastestsmallesttextencoderdecoder@1.0.22)(hardhat-deploy@0.12.4(bufferutil@4.0.9)(utf-8-validate@5.0.10))(hardhat@2.23.0(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10))(solidity-bytes-utils@0.8.3)(typescript@5.8.3)(utf-8-validate@5.0.10)
       '@hyperlane-xyz/utils':
-        specifier: ^12.3.0
-        version: 12.3.0(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
+        specifier: 8.6.1
+        version: 8.6.1(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
       '@modelcontextprotocol/sdk':
         specifier: 1.7.0
         version: 1.7.0
@@ -535,12 +535,12 @@ packages:
       '@ethersproject/abi': '*'
       '@ethersproject/providers': '*'
 
-  '@hyperlane-xyz/utils@12.3.0':
-    resolution: {integrity: sha512-cIIutTzp8dqUdAVyodJlkA8ovY10e8zZfVJMttxRvEIS0JbuKNC9IRy6r2rGr/pTsRU9SjR6ZYMkoFh7G/3Qyg==}
-    engines: {node: '>=16'}
-
   '@hyperlane-xyz/utils@12.5.0':
     resolution: {integrity: sha512-mUfNFk/czd3RT85HWJhDjBusdY086ULXBNvuUSFNhDDmLD5DiMCt9mtcPRJzox0wUnn/wtsfYAUapzBUePoQwQ==}
+    engines: {node: '>=16'}
+
+  '@hyperlane-xyz/utils@8.6.1':
+    resolution: {integrity: sha512-p1dK1RNNCUK6WQ3sblqMT0UXmqAu5Z27WMVD1U0/VI2sCb+P0SLIKEjAKATBUxWuFNFhOI9B30YMKZfN8pnBjg==}
     engines: {node: '>=16'}
 
   '@hyperlane-xyz/utils@8.9.0':
@@ -5588,7 +5588,7 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@hyperlane-xyz/utils@12.3.0(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)':
+  '@hyperlane-xyz/utils@12.5.0(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)':
     dependencies:
       '@cosmjs/encoding': 0.32.4
       '@solana/web3.js': 1.98.2(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)
@@ -5603,7 +5603,7 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@hyperlane-xyz/utils@12.5.0(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)':
+  '@hyperlane-xyz/utils@8.6.1(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)':
     dependencies:
       '@cosmjs/encoding': 0.32.4
       '@solana/web3.js': 1.98.2(bufferutil@4.0.9)(typescript@5.8.3)(utf-8-validate@5.0.10)

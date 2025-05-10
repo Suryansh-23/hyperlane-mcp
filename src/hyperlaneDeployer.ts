@@ -19,7 +19,7 @@ import {
 } from "@hyperlane-xyz/sdk";
 import { Address, ProtocolType } from "@hyperlane-xyz/utils";
 import { ethers, BigNumber } from "ethers";
-import { stringify as yamlStringify } from "yaml";
+import { stringify as yamlStringify , parse as yamlParse  } from "yaml";
 import { writeYamlOrJson } from "./configOpts.js";
 import path from "path";
 import fs from "fs";
@@ -133,7 +133,7 @@ export async function createChainConfig(options: ChainConfigOptions): Promise<vo
         displayName: options.config.chainName,
         chainId: options.config.chainId,
         domainId: Number(options.config.chainId),
-        protocol: ProtocolType.Ethereum,
+        protocol: ProtocolType.Ethereum , 
         rpcUrls: [{
             http: options.config.rpcUrl
         }],
@@ -203,6 +203,7 @@ export async function runCoreDeploy(config: CoreDeployConfig): Promise<void> {
         displayName: config.config.chainName,
         chainId: config.config.chainId,
         domainId: Number(config.config.chainId),
+        //@ts-ignore
         protocol: ProtocolType.Ethereum,
         rpcUrls: [{
             http: config.config.rpcUrl
@@ -303,5 +304,5 @@ export async function loadChainDeployConfig(chainName: string): Promise<ChainCon
     }
     
     const content = fs.readFileSync(filePath, 'utf-8');
-    return yamlStringify.parse(content) as ChainConfig;
+    return yamlParse(content) as ChainConfig;
 }
