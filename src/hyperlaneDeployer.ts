@@ -19,7 +19,7 @@ import {
 } from "@hyperlane-xyz/sdk";
 import { Address, ProtocolType } from "@hyperlane-xyz/utils";
 import { ethers, BigNumber } from "ethers";
-import { stringify as yamlStringify , parse as yamlParse  } from "yaml";
+import { stringify as yamlStringify, parse as yamlParse } from "yaml";
 import { writeYamlOrJson } from "./configOpts.js";
 import path from "path";
 import fs from "fs";
@@ -48,7 +48,6 @@ export interface DeployConfig {
 
 export interface ChainConfigOptions {
     config: ChainConfig;
-    wantNativeTokenConfig: boolean;
     registry: BaseRegistry;
 }
 
@@ -143,10 +142,10 @@ export async function createChainConfig(options: ChainConfigOptions): Promise<vo
     await addNativeTokenConfig(
         metadata,
         { tokenSymbol: options.config.tokenSymbol, tokenName: options.config.tokenName },
-        options.wantNativeTokenConfig
     );
 
     const parseResult = ChainMetadataSchema.safeParse(metadata);
+    console.log("Chain metadata", parseResult);
 
     if (parseResult.success) {
         const metadataYaml = yamlStringify(metadata, {
@@ -159,7 +158,8 @@ export async function createChainConfig(options: ChainConfigOptions): Promise<vo
         console.log("Chain metadata created", metadataYaml);
     } else {
         console.error(parseResult.error);
-        throw new Error("Error in creating chain metadata");
+        // FIX: Properly format the error message using template literals
+        throw new Error(`Error in creating chain metadata: ${JSON.stringify(metadata)}`);
     }
 }
 
@@ -257,7 +257,7 @@ export async function createAgentConfigs(
 ): Promise<void> {
     const addresses = await registry.getAddresses();
     const chainAddresses = filterAddresses(addresses, chains);
-    
+
     if (!chainAddresses) {
         throw new Error("No chain addresses found");
     }
@@ -282,12 +282,12 @@ export async function createAgentConfigs(
 export function getChainDeployConfigPath(chainName: string): string {
     const homeDir = process.env.HOME || ".";
     const mcpDir = path.join(homeDir, ".hyperlane-mcp");
-    
+
     // Create directory if it doesn't exist
     if (!fs.existsSync(mcpDir)) {
         fs.mkdirSync(mcpDir, { recursive: true });
     }
-    
+
     return path.join(mcpDir, `chain-${chainName}-deploy.yaml`);
 }
 
@@ -302,7 +302,7 @@ export async function loadChainDeployConfig(chainName: string): Promise<ChainCon
     if (!fs.existsSync(filePath)) {
         return null;
     }
-    
+
     const content = fs.readFileSync(filePath, 'utf-8');
     return yamlParse(content) as ChainConfig;
 }

@@ -523,15 +523,12 @@ server.tool(
 
     // Step 1: Create Chain Config + Save
     const chainConfig = { chainName, chainId, rpcUrl, tokenSymbol, tokenName, isTestnet };
-    const registry = new GithubRegistry(); // or any other registry implementation you're using
-
     await createChainConfig({
       config: chainConfig,
-      wantNativeTokenConfig: true,
       registry,
     });
 
-    await saveChainDeployConfig(chainConfig);
+  
 
     // Step 2: Deploy Core Contracts
     const deployConfig = { config: chainConfig, registry };

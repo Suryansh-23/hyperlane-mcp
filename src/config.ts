@@ -6,10 +6,10 @@ import { ChainTokenConfig } from "./types.js";
 export async function addNativeTokenConfig(
     metadata: ChainMetadata , 
     tokenConfig:  ChainTokenConfig,
-    wantNativeTokenConfig : boolean
+  
 ) {
 
-    if (wantNativeTokenConfig) {
+   
         const nativeTokenSymbol = tokenConfig.tokenSymbol
         const nativeTokenName = tokenConfig.tokenName
        
@@ -18,7 +18,7 @@ export async function addNativeTokenConfig(
             name: nativeTokenName ?? "Ether",
             decimals: 18,
         };
-    }
+    
 }
 
 

@@ -39,6 +39,7 @@ type ChainAddresses = Record<string, string>;
 type WarpRouteConfigMap = Record<string, WarpCoreConfig>;
 type WarpDeployConfigMap = Record<string, WarpRouteDeployConfig>;
 
+
 export interface LocalRegistryOptions {
   sourceRegistry: IRegistry;
   storagePath?: string;
@@ -54,6 +55,8 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
   private sourceRegistry: IRegistry;
   private localWarpRoutes: WarpRouteConfigMap = {};
   private localWarpDeployConfigs: WarpDeployConfigMap = {};
+  private localChainMetadata: Record<string, ChainMetadata> = {};
+
   private localStoragePath: string;
 
   // Define Model Context Protocol resource URIs for this registry
@@ -171,9 +174,33 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
     return this.sourceRegistry.getChainAddresses(chainName);
   }
 
-  async addChain(chains: UpdateChainParams): Promise<void> {
-    return this.sourceRegistry.addChain(chains)
+  async addChain(params: UpdateChainParams): Promise<void> {
+  const { chainName, config } = params;
+
+  if (!config || typeof config !== 'object') {
+    throw new Error(`Invalid or missing chain config for "${chainName}"`);
   }
+
+  const yamlStr = stringify(config, null, 2);
+  if (!yamlStr || typeof yamlStr !== 'string') {
+    throw new Error(`Failed to serialize config for "${chainName}"`);
+  }
+
+  // cache in memory
+  this.localChainMetadata[chainName] = config as unknown as ChainMetadata;
+
+  const filePath = path.join(
+    this.localStoragePath,
+    "chains",
+    `${chainName}.yaml`
+  );
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, yamlStr);
+
+  console.log(`✅  Chain added → ${chainName}`);
+}
+
 
   async updateChain(chains: UpdateChainParams): Promise<void> {
    return this.sourceRegistry.updateChain(chains)
