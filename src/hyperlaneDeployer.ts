@@ -193,7 +193,7 @@ export async function InitializeDeployment(): Promise<CoreConfig> {
     }
 }
 
-export async function runCoreDeploy(config: CoreDeployConfig): Promise<void> {
+export async function runCoreDeploy(config: CoreDeployConfig): Promise<Record<string, string>> {
     if (!process.env.PRIVATE_KEY) {
         throw new Error("PRIVATE_KEY environment variable is required");
     }
@@ -245,8 +245,9 @@ export async function runCoreDeploy(config: CoreDeployConfig): Promise<void> {
 
     await completeDeploy(multiProvider, initialBalances, userAddress, [chain]);
 
-    const deployedAddress = evmCoreModule.serialize();
-    console.log(deployedAddress);
+    const deployedAddresses = evmCoreModule.serialize();
+    
+    return deployedAddresses; // Return the deployed addresses as the function output
 }
 
 export async function createAgentConfigs(

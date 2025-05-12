@@ -534,7 +534,13 @@ server.tool(
     const deployConfig = { config: chainConfig, registry };
 
     
-    await runCoreDeploy(deployConfig);
+    const deployedAddress =  await runCoreDeploy(deployConfig);
+
+    console.log("Deployed Address: ", deployedAddress);
+    server.server.sendLoggingMessage({
+      level: "info",
+      data: `Core contracts deployed successfully for ${chainName}. Deployed address: ${deployedAddress}`,
+    });
 
     // Step 3: Create Agent Configs
     const metadata = {
