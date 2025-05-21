@@ -1,4 +1,4 @@
-import { GithubRegistry } from "@hyperlane-xyz/registry";
+import { GithubRegistry } from '@hyperlane-xyz/registry';
 import {
   ChainMap,
   ChainMetadata,
@@ -6,50 +6,61 @@ import {
   TokenType,
   WarpCoreConfigSchema,
   WarpRouteDeployConfig,
-} from "@hyperlane-xyz/sdk";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+} from '@hyperlane-xyz/sdk';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   ListResourceTemplatesRequestSchema,
   ReadResourceRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
-import { config } from "dotenv";
-import { ethers } from "ethers";
-import fs from "fs";
-import path from "path";
-import URITemplate from "uri-templates";
-import * as yaml from "yaml";
-import { z } from "zod";
-import { assetTransfer } from "./assetTransfer.js";
-import { LocalRegistry } from "./localRegistry.js";
-import { msgTransfer } from "./msgTransfer.js";
-import { TYPE_CHOICES, ChainConfig } from "./types.js";
-import { privateKeyToSigner } from "./utils.js";
-import { createWarpRouteDeployConfig, deployWarpRoute } from "./warpRoute.js";
+} from '@modelcontextprotocol/sdk/types.js';
+import { config } from 'dotenv';
+import { ethers } from 'ethers';
+import fs from 'fs';
+import path from 'path';
+import URITemplate from 'uri-templates';
+import * as yaml from 'yaml';
+import { z } from 'zod';
+import { assetTransfer } from './assetTransfer.js';
+import { LocalRegistry } from './localRegistry.js';
+import { msgTransfer } from './msgTransfer.js';
+import { TYPE_CHOICES } from './types.js';
+import { privateKeyToSigner } from './utils.js';
+import { createWarpRouteDeployConfig, deployWarpRoute } from './warpRoute.js';
 
-import { 
-    runCoreDeploy, 
-    saveChainDeployConfig, 
-    createChainConfig, 
-    loadChainDeployConfig,
-    CoreDeployConfig , 
-    createAgentConfigs, 
-    InitializeDeployment, 
-
-} from "./hyperlaneDeployer.js";
-import { ValidatorRunner } from "./RunValidator.js";
-import { RelayerRunner } from "./RunRelayer.js";
-import { Protocol } from "@modelcontextprotocol/sdk/shared/protocol.js";
-import { ProtocolType } from "@hyperlane-xyz/utils";
+import { ProtocolType } from '@hyperlane-xyz/utils';
+import {
+  createAgentConfigs,
+  createChainConfig,
+  loadChainDeployConfig,
+  runCoreDeploy,
+} from './hyperlaneDeployer.js';
+import { RelayerRunner } from './RunRelayer.js';
+import { ValidatorRunner } from './RunValidator.js';
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 
 // Load environment variables from .env file
 config();
 
+// Set up file logging
+const logFile = fs.createWriteStream('./run.log', {
+  flags: 'a',
+});
+const logger = {
+  info: (message: string) => {
+    const timestamp = new Date().toISOString();
+    logFile.write(`[${timestamp}] INFO: ${message}\n`);
+  },
+  error: (message: string) => {
+    const timestamp = new Date().toISOString();
+    logFile.write(`[${timestamp}] ERROR: ${message}\n`);
+  },
+};
+
 // Create server instance
 const server = new McpServer(
   {
-    name: "hyperlane-mcp",
-    version: "1.0.0",
+    name: 'hyperlane-mcp',
+    version: '1.0.0',
     capabilities: {
       resources: {},
       tools: {},
@@ -58,11 +69,11 @@ const server = new McpServer(
   {
     capabilities: {
       logging: {
-        jsonrpc: "2.0",
+        jsonrpc: '2.0',
         id: 1,
-        method: "logging/setLevel",
+        method: 'logging/setLevel',
         params: {
-          level: "info",
+          level: 'info',
         },
       },
       resources: {
@@ -73,18 +84,23 @@ const server = new McpServer(
 );
 
 // Create directory for hyperlane-mcp if it doesn't exist
-const homeDir = process.env.HOME!;
+const homeDir = process.env.CACHE_DIR || process.env.HOME;
+let mcpDir;
 if (homeDir) {
-  const mcpDir = path.join(homeDir, ".hyperlane-mcp");
+  mcpDir = path.join(homeDir, '.hyperlane-mcp');
   if (!fs.existsSync(mcpDir)) {
     fs.mkdirSync(mcpDir);
   }
+} else {
+  throw new Error(
+    'Environment variable CACHE_DIR or HOME not set. Set it to a valid directory path.'
+  );
 }
 
 // init key
 const key = process.env.PRIVATE_KEY;
 if (!key) {
-  throw new Error("No private key provided");
+  throw new Error('No private key provided');
 }
 const signer = privateKeyToSigner(key);
 
@@ -96,9 +112,11 @@ const githubRegistry = new GithubRegistry({
 // Initialize Local Registry with Github Registry as source
 const registry = new LocalRegistry({
   sourceRegistry: githubRegistry,
+  storagePath: homeDir,
+  logger,
 });
 
-const URI_TEMPLATE_STRING = "hyperlane-warp:///{symbol}/{/chain*}";
+const URI_TEMPLATE_STRING = 'hyperlane-warp:///{symbol}/{/chain*}';
 const URI_TEMPLATE = URITemplate(URI_TEMPLATE_STRING);
 const URI_OBJ_TEMPATE = z.object({
   symbol: z.string(),
@@ -112,10 +130,10 @@ server.server.setRequestHandler(
       resourceTemplates: [
         {
           uriTemplate: URI_TEMPLATE_STRING,
-          name: "warpRoute",
+          name: 'warpRoute',
           description:
-            "Hyperlane Warp Route for the given combination of symbol and chains. This can be fetched and used for asset transfers between chains.",
-          mimeType: "application/json",
+            'Hyperlane Warp Route for the given combination of symbol and chains. This can be fetched and used for asset transfers between chains.',
+          mimeType: 'application/json',
         },
       ],
     };
@@ -125,19 +143,19 @@ server.server.setRequestHandler(
 server.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const values = URI_TEMPLATE.fromUri(request.params.uri);
   server.server.sendLoggingMessage({
-    level: "info",
+    level: 'info',
     data: `Parsed URI values: ${JSON.stringify(values)}`,
   });
 
   const parsed = URI_OBJ_TEMPATE.safeParse(values);
   if (!parsed.success) {
-    throw new Error("Invalid URI parameters");
+    throw new Error('Invalid URI parameters');
   }
 
   let { symbol, chain } = parsed.data;
-  chain = chain.filter((c) => c !== "");
+  chain = chain.filter((c) => c !== '');
   server.server.sendLoggingMessage({
-    level: "info",
+    level: 'info',
     data: `Fetching warp routes for symbol: ${typeof symbol}:${symbol} and chains: ${typeof chain}:${chain}`,
   });
 
@@ -146,7 +164,7 @@ server.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     warpRoutes = await registry.getWarpRoutesBySymbolAndChains(symbol, chain);
   } catch (error) {
     server.server.sendLoggingMessage({
-      level: "error",
+      level: 'error',
       data: `Error fetching warp routes: ${error}`,
     });
     throw new Error(`Error fetching warp routes: ${error}`);
@@ -156,8 +174,8 @@ server.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     contents: [
       {
         uri: request.params.uri,
-        name: `Hyperlane Warp Route for ${symbol} on ${chain.join("-")}`,
-        mimeType: "application/json",
+        name: `Hyperlane Warp Route for ${symbol} on ${chain.join('-')}`,
+        mimeType: 'application/json',
         text: JSON.stringify(warpRoutes, null, 2),
       },
     ],
@@ -165,33 +183,33 @@ server.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 });
 
 server.tool(
-  "cross-chain-message-transfer",
-  "Transfers a cross-chain message.",
+  'cross-chain-message-transfer',
+  'Transfers a cross-chain message.',
   {
-    origin: z.string().describe("Origin chain"),
-    destination: z.string().describe("Destination chain"),
+    origin: z.string().describe('Origin chain'),
+    destination: z.string().describe('Destination chain'),
     recipient: z
       .string()
       .length(42)
-      .regex(/^0x[a-fA-F0-9]{40}$/, "Invalid EVM address")
-      .describe("Recipient address"),
-    messageBody: z.string().describe("Message body"),
+      .regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid EVM address')
+      .describe('Recipient address'),
+    messageBody: z.string().describe('Message body'),
   },
   async ({ origin, destination, recipient, messageBody }) => {
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `Starting cross-chain message transfer...
 Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}, messageBody=${messageBody}`,
     });
 
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `Using signer with address: ${signer.address}`,
     });
 
     server.server.sendLoggingMessage({
-      level: "info",
-      data: "Initializing Github Registry...",
+      level: 'info',
+      data: 'Initializing Github Registry...',
     });
 
     registry.listRegistryContent();
@@ -207,7 +225,7 @@ Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}
     };
 
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `Chain metadata fetched: ${JSON.stringify(chainMetadata, null, 2)}`,
     });
 
@@ -218,7 +236,7 @@ Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}
       },
     });
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `MultiProvider initialized with chains: ${JSON.stringify(
         multiProvider,
         null,
@@ -227,8 +245,8 @@ Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}
     });
 
     server.server.sendLoggingMessage({
-      level: "info",
-      data: "Initiating message transfer...",
+      level: 'info',
+      data: 'Initiating message transfer...',
     });
 
     const [dispatchTx, message] = await msgTransfer({
@@ -241,14 +259,14 @@ Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}
     });
 
     server.server.sendLoggingMessage({
-      level: "info",
-      data: "Message transfer completed successfully",
+      level: 'info',
+      data: 'Message transfer completed successfully',
     });
 
     return {
       content: [
         {
-          type: "text",
+          type: 'text',
           text: `Message dispatched successfully. Transaction Hash: ${dispatchTx.transactionHash}.\n Message ID for the dispatched message: ${message.id}`,
         },
       ],
@@ -257,36 +275,36 @@ Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}
 );
 
 server.tool(
-  "cross-chain-asset-transfer",
-  "Transfers an asset across chains for the specified token (specified in the WarpCoreConfig), amount, chains and recipient.\n" +
-    "You can use the `deploy-warp-route` tool to deploy a warp route for the asset and chains.\n" +
-    "You can use the `list-resources` tool to fetch the warp route config for the asset and chains.\n" +
-    "This tool returns the transaction hash and message ID for the dispatched messages for each transfer between the chains.",
+  'cross-chain-asset-transfer',
+  'Transfers an asset across chains for the specified token (specified in the WarpCoreConfig), amount, chains and recipient.\n' +
+    'You can use the `deploy-warp-route` tool to deploy a warp route for the asset and chains.\n' +
+    'You can use the `list-resources` tool to fetch the warp route config for the asset and chains.\n' +
+    'This tool returns the transaction hash and message ID for the dispatched messages for each transfer between the chains.',
   {
     chains: z
       .array(z.string())
-      .describe("Chains to transfer asset between in order of transfer"),
-    amount: z.string().describe("Amount to transfer"),
+      .describe('Chains to transfer asset between in order of transfer'),
+    amount: z.string().describe('Amount to transfer'),
     recipient: z
       .string()
       .length(42)
-      .regex(/^0x[a-fA-F0-9]{40}$/, "Invalid EVM address")
+      .regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid EVM address')
       .optional()
       .default(signer.address)
-      .describe("Recipient address"),
+      .describe('Recipient address'),
     warpCoreConfig: WarpCoreConfigSchema.describe(
-      "Warp core config for the asset transfer.\n" +
-        "You can use fetch the warp route config using the resources.\n" +
+      'Warp core config for the asset transfer.\n' +
+        'You can use fetch the warp route config using the resources.\n' +
         "If the warp config for the asset & chains doesn't exist. You can create it using the deploy-warp-route tool.\n" +
-        "So, please make sure that a warp route config exists for the asset & chains before using this tool."
+        'So, please make sure that a warp route config exists for the asset & chains before using this tool.'
     ),
   },
   async ({ chains, amount, recipient, warpCoreConfig }) => {
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `Starting cross-chain asset transfer...
 Parameters: chains=${chains.join(
-        ", "
+        ', '
       )}, amount=${amount}, recipient=${recipient}, warpCoreConfig=${JSON.stringify(
         warpCoreConfig,
         null,
@@ -317,7 +335,7 @@ Parameters: chains=${chains.join(
       ),
     });
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `MultiProvider initialized with chains: ${JSON.stringify(
         multiProvider,
         null,
@@ -326,8 +344,8 @@ Parameters: chains=${chains.join(
     });
 
     server.server.sendLoggingMessage({
-      level: "info",
-      data: "Initiating asset transfer...",
+      level: 'info',
+      data: 'Initiating asset transfer...',
     });
 
     const deliveryResult = await assetTransfer({
@@ -341,7 +359,7 @@ Parameters: chains=${chains.join(
       return {
         content: [
           {
-            type: "text",
+            type: 'text',
             text: `Error in asset transfer. No delivery result couldn't be generated`,
           },
         ],
@@ -349,15 +367,15 @@ Parameters: chains=${chains.join(
     }
 
     server.server.sendLoggingMessage({
-      level: "info",
-      data: "Message transfer completed successfully",
+      level: 'info',
+      data: 'Message transfer completed successfully',
     });
 
     return {
       content: [
         {
-          mimeType: "application/json",
-          type: "text",
+          mimeType: 'application/json',
+          type: 'text',
           text: JSON.stringify(
             deliveryResult.map(([dispatchTx, message]) => ({
               transactionHash: dispatchTx.transactionHash,
@@ -373,48 +391,48 @@ Parameters: chains=${chains.join(
 );
 
 server.tool(
-  "deploy-warp-route",
-  "Deploys a warp route.",
+  'deploy-warp-route',
+  'Deploys a warp route.',
   {
     warpChains: z
       .array(z.string())
-      .describe("Warp chains to deploy the route on"),
+      .describe('Warp chains to deploy the route on'),
     tokenTypes: z
       .array(
         z.enum(
           TYPE_CHOICES.map((choice) => choice.name) as [string, ...string[]]
         )
       )
-      .describe("Token types to deploy"),
+      .describe('Token types to deploy'),
   },
   async ({ warpChains, tokenTypes }) => {
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `Deploying warp route with chains: ${warpChains.join(
-        ", "
-      )} and token types: ${tokenTypes.join(", ")}.`,
+        ', '
+      )} and token types: ${tokenTypes.join(', ')}.`,
     });
 
     const fileName =
-      warpChains.map((chain, i) => `${chain}:${tokenTypes[i]}`).join("-") +
-      ".yaml";
+      warpChains.map((chain, i) => `${chain}:${tokenTypes[i]}`).join('-') +
+      '.yaml';
 
     let warpRouteConfig: WarpRouteDeployConfig;
-    const filePath = path.join(homeDir, ".hyperlane-mcp", fileName);
+    const filePath = path.join(homeDir, '.hyperlane-mcp', fileName);
 
     if (fs.existsSync(filePath)) {
       server.server.sendLoggingMessage({
-        level: "info",
+        level: 'info',
         data: `Warp Route Already exists @ ${fileName} already exists. Skipping Config Creation.`,
       });
 
-      const fileContent = fs.readFileSync(filePath, "utf-8");
+      const fileContent = fs.readFileSync(filePath, 'utf-8');
       warpRouteConfig = yaml.parse(fileContent) as WarpRouteDeployConfig;
 
       return {
         content: [
           {
-            type: "text",
+            type: 'text',
             text: `Warp Route Config already exists @ ${fileName}. Skipping Config Creation. Config: ${JSON.stringify(
               warpRouteConfig,
               null,
@@ -425,7 +443,7 @@ server.tool(
       };
     } else {
       server.server.sendLoggingMessage({
-        level: "info",
+        level: 'info',
         data: `Creating Warp Route Config @ ${fileName}`,
       });
 
@@ -436,11 +454,11 @@ server.tool(
         ),
         signerAddress: signer.address,
         registry,
-        outPath: "./warpRouteDeployConfig.yaml",
+        outPath: './warpRouteDeployConfig.yaml',
       });
 
       server.server.sendLoggingMessage({
-        level: "info",
+        level: 'info',
         data: `Warp route deployment config created: ${JSON.stringify(
           warpRouteConfig,
           null,
@@ -467,7 +485,7 @@ server.tool(
     });
 
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `Warp route deployed successfully. Config: ${JSON.stringify(
         warpRouteConfig,
         null,
@@ -478,7 +496,7 @@ server.tool(
     return {
       content: [
         {
-          type: "text",
+          type: 'text',
           text: `Warp route deployment config created successfully. Config: ${JSON.stringify(
             deploymentConfig,
             null,
@@ -491,54 +509,78 @@ server.tool(
 );
 
 server.tool(
-  "deploy-chain",
-  "Deploys a new chain to the Hyperlane network.",
+  'deploy-chain',
+  'Deploys a new chain to the Hyperlane network.',
   {
-    chainName: z.string().describe("Name of the chain to deploy"),
-    chainId: z.number().describe("Chain ID of the chain to deploy"),
-    rpcUrl: z.string().url().describe("RPC URL for the chain"),
-    tokenSymbol: z.string().describe("Native token symbol"),
-    tokenName: z.string().describe("Native token name"),
-    isTestnet: z.boolean().default(false).describe("Whether this is a testnet chain"),
+    chainName: z.string().describe('Name of the chain to deploy'),
+    chainId: z.number().describe('Chain ID of the chain to deploy'),
+    rpcUrl: z.string().url().describe('RPC URL for the chain'),
+    tokenSymbol: z.string().describe('Native token symbol'),
+    tokenName: z.string().describe('Native token name'),
+    isTestnet: z
+      .boolean()
+      .default(false)
+      .describe('Whether this is a testnet chain'),
   },
   async ({ chainName, chainId, rpcUrl, tokenSymbol, tokenName, isTestnet }) => {
-    const homeDir = process.env.HOME ; 
     const existingConfig = await loadChainDeployConfig(chainName);
 
     if (existingConfig) {
       server.server.sendLoggingMessage({
-        level: "info",
+        level: 'info',
         data: `Chain deployment config already exists for ${chainName}. Using existing config.`,
       });
 
       return {
         content: [
           {
-            type: "text",
-            text: `Chain config already exists. Skipping config creation.\n${JSON.stringify(existingConfig, null, 2)}`,
+            type: 'text',
+            text: `Chain config already exists. Skipping config creation.\n${JSON.stringify(
+              existingConfig,
+              null,
+              2
+            )}`,
           },
         ],
       };
     }
 
+    server.server.sendLoggingMessage({
+      level: 'info',
+      data: `Deploying chain ${chainName} with ID ${chainId}...`,
+    });
+
     // Step 1: Create Chain Config + Save
-    const chainConfig = { chainName, chainId, rpcUrl, tokenSymbol, tokenName, isTestnet };
+    const chainConfig = {
+      chainName,
+      chainId,
+      rpcUrl,
+      tokenSymbol,
+      tokenName,
+      isTestnet,
+    };
     await createChainConfig({
       config: chainConfig,
       registry,
     });
 
-  
+    server.server.sendLoggingMessage({
+      level: 'info',
+      data: `Chain config created successfully: ${JSON.stringify(
+        chainConfig,
+        null,
+        2
+      )}`,
+    });
 
     // Step 2: Deploy Core Contracts
     const deployConfig = { config: chainConfig, registry };
 
-    
-    const deployedAddress =  await runCoreDeploy(deployConfig);
+    const deployedAddress = await runCoreDeploy(deployConfig);
 
-    console.log("Deployed Address: ", deployedAddress);
+    logger.info('Deployed Address: ' + deployedAddress);
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `Core contracts deployed successfully for ${chainName}. Deployed address: ${deployedAddress}`,
     });
 
@@ -552,26 +594,42 @@ server.tool(
         protocol: ProtocolType.Ethereum,
         rpcUrls: [{ http: rpcUrl }],
         isTestnet,
-      }
-    } as ChainMap<ChainMetadata> ; 
+      },
+    } as ChainMap<ChainMetadata>;
+
+    server.server.sendLoggingMessage({
+      level: 'info',
+      data: `Create metadata for ${chainName}: ${JSON.stringify(
+        metadata,
+        null,
+        2
+      )}`,
+    });
 
     const multiProvider = new MultiProvider(metadata);
 
-   
-    const outPath = path.join(homeDir!, ".hyperlane-mcp", `agent-config-${chainName}.json`);
+    const outPath = path.join(
+      homeDir!,
+      '.hyperlane-mcp',
+      `agent-config-${chainName}.json`
+    );
 
     await createAgentConfigs(registry, multiProvider, outPath, [chainName]);
 
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `✅ Chain deployment and agent config creation complete for ${chainName}`,
     });
 
     return {
       content: [
         {
-          type: "text",
-          text: `✅ Successfully deployed ${chainName} and generated agent config.\n\nSaved config: ${JSON.stringify(chainConfig, null, 2)}`,
+          type: 'text',
+          text: `✅ Successfully deployed ${chainName} and generated agent config.\n\nSaved config: ${JSON.stringify(
+            chainConfig,
+            null,
+            2
+          )}`,
         },
       ],
     };
@@ -579,34 +637,38 @@ server.tool(
 );
 
 server.tool(
-  "run-validator",
-  "Runs a validator for a specific chain.",
+  'run-validator',
+  'Runs a validator for a specific chain.',
   {
-    chainName: z.string().describe("Name of the chain to validate"),
-    validatorKey: z.string().describe("Private key for the validator"),
-    configFilePath: z.string().describe("Path to the agent config file"),
+    chainName: z.string().describe('Name of the chain to validate'),
+    validatorKey: z.string().describe('Private key for the validator'),
+    configFilePath: z.string().describe('Path to the agent config file'),
   },
   async ({ chainName, validatorKey, configFilePath }) => {
     server.server.sendLoggingMessage({
-      level: "info",
+      level: 'info',
       data: `Starting validator for chain: ${chainName}...`,
     });
 
     try {
-      const validatorRunner = new ValidatorRunner(chainName, validatorKey, configFilePath);
+      const validatorRunner = new ValidatorRunner(
+        chainName,
+        validatorKey,
+        configFilePath
+      );
       await validatorRunner.run();
 
       return {
         content: [
           {
-            type: "text",
+            type: 'text',
             text: `Validator started successfully for chain: ${chainName}`,
           },
         ],
       };
     } catch (error) {
       server.server.sendLoggingMessage({
-        level: "error",
+        level: 'error',
         data: `Error starting validator for chain ${chainName}: ${error}`,
       });
       throw error;
@@ -615,36 +677,45 @@ server.tool(
 );
 
 server.tool(
-  "run-relayer",
-  "Runs a relayer for specified chains.",
+  'run-relayer',
+  'Runs a relayer for specified chains.',
   {
-    relayChains: z.array(z.string()).describe("Chains to relay between"),
-    relayerKey: z.string().describe("Private key for the relayer"),
-    configFilePath: z.string().describe("Path to the agent config file"),
-    validatorChainName: z.string().describe("Name of the validator chain"),
+    relayChains: z.array(z.string()).describe('Chains to relay between'),
+    relayerKey: z.string().describe('Private key for the relayer'),
+    configFilePath: z.string().describe('Path to the agent config file'),
+    validatorChainName: z.string().describe('Name of the validator chain'),
   },
   async ({ relayChains, relayerKey, configFilePath, validatorChainName }) => {
     server.server.sendLoggingMessage({
-      level: "info",
-      data: `Starting relayer for chains: ${relayChains.join(", ")}...`,
+      level: 'info',
+      data: `Starting relayer for chains: ${relayChains.join(', ')}...`,
     });
 
     try {
-      const relayerRunner = new RelayerRunner(relayChains, relayerKey, configFilePath, validatorChainName);
+      const relayerRunner = new RelayerRunner(
+        relayChains,
+        relayerKey,
+        configFilePath,
+        validatorChainName
+      );
       await relayerRunner.run();
 
       return {
         content: [
           {
-            type: "text",
-            text: `Relayer started successfully for chains: ${relayChains.join(", ")}`,
+            type: 'text',
+            text: `Relayer started successfully for chains: ${relayChains.join(
+              ', '
+            )}`,
           },
         ],
       };
     } catch (error) {
       server.server.sendLoggingMessage({
-        level: "error",
-        data: `Error starting relayer for chains ${relayChains.join(", ")}: ${error}`,
+        level: 'error',
+        data: `Error starting relayer for chains ${relayChains.join(
+          ', '
+        )}: ${error}`,
       });
       throw error;
     }
@@ -654,10 +725,12 @@ server.tool(
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Hello World MCP Server running on stdio");
+  console.error('Hyperlane MCP server started. Listening for requests...');
 }
 
 main().catch((error) => {
-  console.error("Fatal error in main():", error);
+  console.error('Fatal error in main():', error);
   process.exit(1);
 });
+
+export default logger;

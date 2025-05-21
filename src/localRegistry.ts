@@ -1,24 +1,21 @@
 import {
-  BaseRegistry,
-  IRegistry,
-  RegistryType,
-  RegistryContent,
-  ChainFiles,
   AddWarpRouteOptions,
   GithubRegistry,
-} from "@hyperlane-xyz/registry";
+  IRegistry,
+  RegistryContent,
+} from '@hyperlane-xyz/registry';
 import {
   ChainMap,
   ChainMetadata,
   ChainName,
   WarpCoreConfig,
   WarpRouteDeployConfig,
-} from "@hyperlane-xyz/sdk";
-import crypto from "crypto";
-import { config } from "dotenv";
-import fs from "fs";
-import path from "path";
-import { stringify, parse } from "yaml";
+} from '@hyperlane-xyz/sdk';
+import crypto from 'crypto';
+import { config } from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { parse, stringify } from 'yaml';
 
 config();
 
@@ -27,11 +24,11 @@ interface WarpRouteFilterParams {
   chainName?: string;
   symbol?: string;
 }
-interface UpdateChainParams {
-  chainName: ChainName;
-  // Add other required properties based on actual usage
 
-  config: WarpCoreConfig;
+export interface UpdateChainParams {
+  chainName: ChainName;
+  metadata?: ChainMetadata;
+  addresses?: ChainAddresses;
 }
 
 // Define internal types to match registry types
@@ -39,10 +36,9 @@ type ChainAddresses = Record<string, string>;
 type WarpRouteConfigMap = Record<string, WarpCoreConfig>;
 type WarpDeployConfigMap = Record<string, WarpRouteDeployConfig>;
 
-
 export interface LocalRegistryOptions {
   sourceRegistry: IRegistry;
-  storagePath?: string;
+  storagePath?: string; // path to the parent dir that contains the `.hyperlane-mcp` dir
   logger?: any; // Match BaseRegistry's constructor parameter
 }
 
@@ -60,8 +56,8 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
   private localStoragePath: string;
 
   // Define Model Context Protocol resource URIs for this registry
-  static readonly MCP_ROUTES_URI = "hyperlane-warp://registry/warp-routes";
-  static readonly MCP_DEPLOY_CONFIG_URI_BASE = "hyperlane-warp://";
+  static readonly MCP_ROUTES_URI = 'hyperlane-warp://registry/warp-routes';
+  static readonly MCP_DEPLOY_CONFIG_URI_BASE = 'hyperlane-warp://';
 
   constructor(options: LocalRegistryOptions) {
     // Pass logger to BaseRegistry constructor if provided
@@ -70,7 +66,7 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
     this.sourceRegistry = options.sourceRegistry;
     this.localStoragePath =
       options.storagePath ||
-      path.join(process.env.HOME || ".", ".hyperlane-mcp");
+      path.join(process.env.HOME || '.', '.hyperlane-mcp');
 
     // Create local storage directory if it doesn't exist
     if (!fs.existsSync(this.localStoragePath)) {
@@ -87,17 +83,17 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
       if (fs.existsSync(routesDir)) {
         const files = fs.readdirSync(routesDir);
         for (const file of files) {
-          if (file.endsWith(".yaml") || file.endsWith(".yml")) {
+          if (file.endsWith('.yaml') || file.endsWith('.yml')) {
             const filePath = path.join(routesDir, file);
-            const content = fs.readFileSync(filePath, "utf8");
+            const content = fs.readFileSync(filePath, 'utf8');
             const config = parse(content) as WarpCoreConfig;
-            const routeId = file.replace(/\.(yaml|yml)$/, "");
+            const routeId = file.replace(/\.(yaml|yml)$/, '');
             this.localWarpRoutes[routeId] = config;
           }
         }
       }
     } catch (error) {
-      console.error("Error loading local warp routes:", error);
+      console.error('Error loading local warp routes:', error);
     }
   }
 
@@ -116,11 +112,11 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
     const filePath = path.join(this.localStoragePath, `${routeId}.yaml`);
     fs.writeFileSync(filePath, stringify(config, null, 2));
 
-    console.log(`Warp route added with ID: ${routeId}`);
+    this.logger.info(`Warp route added with ID: ${routeId}`);
   }
-  
+
   //TODO : add chain functionality
-  //TODO  : update chain functionality 
+  //TODO  : update chain functionality
 
   private generateRouteId(config: WarpCoreConfig, symbol?: string): string {
     // Create a deterministic ID based on the token connections
@@ -128,14 +124,14 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
     const chainTokens = tokens
       .map((t) => `${t.chainName}:${t.addressOrDenom}`)
       .sort()
-      .join("-");
-    const baseId = symbol || tokens[0]?.symbol || "unknown";
+      .join('-');
+    const baseId = symbol || tokens[0]?.symbol || 'unknown';
 
     // Add a hash for uniqueness if there are multiple routes with the same symbol
     const hash = crypto
-      .createHash("sha256")
+      .createHash('sha256')
       .update(chainTokens)
-      .digest("hex")
+      .digest('hex')
       .substring(0, 8);
 
     return `${baseId}-${hash}`;
@@ -175,39 +171,42 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
   }
 
   async addChain(params: UpdateChainParams): Promise<void> {
-  const { chainName, config } = params;
+    const { chainName, metadata } = params;
 
-  if (!config || typeof config !== 'object') {
-    throw new Error(`Invalid or missing chain config for "${chainName}"`);
+    if (!metadata || typeof metadata !== 'object') {
+      throw new Error(
+        `Invalid or missing chain config for "${chainName}": ${metadata} @ ${typeof metadata} # ${JSON.stringify(
+          params
+        )}`
+      );
+    }
+
+    const yamlStr = stringify(metadata, null, 2);
+    if (!yamlStr || typeof yamlStr !== 'string') {
+      throw new Error(`Failed to serialize config for "${chainName}"`);
+    }
+
+    // cache in memory
+    this.localChainMetadata[chainName] = metadata as unknown as ChainMetadata;
+
+    const filePath = path.join(
+      this.localStoragePath,
+      'chains',
+      `${chainName}.yaml`
+    );
+
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, yamlStr);
+
+    this.logger.info(`✅  Chain added → ${chainName}`);
   }
-
-  const yamlStr = stringify(config, null, 2);
-  if (!yamlStr || typeof yamlStr !== 'string') {
-    throw new Error(`Failed to serialize config for "${chainName}"`);
-  }
-
-  // cache in memory
-  this.localChainMetadata[chainName] = config as unknown as ChainMetadata;
-
-  const filePath = path.join(
-    this.localStoragePath,
-    "chains",
-    `${chainName}.yaml`
-  );
-
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, yamlStr);
-
-  console.log(`✅  Chain added → ${chainName}`);
-}
-
 
   async updateChain(chains: UpdateChainParams): Promise<void> {
-   return this.sourceRegistry.updateChain(chains)
+    return this.sourceRegistry.updateChain(chains);
   }
 
   async removeChain(_chains: ChainName): Promise<void> {
-    throw new Error("Method not implemented in LocalRegistry");
+    throw new Error('Method not implemented in LocalRegistry');
   }
 
   async getWarpRoute(routeId: string): Promise<WarpCoreConfig | null> {
@@ -325,7 +324,7 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
 
       return matchingConfigs;
     } catch (error) {
-      console.error("Error in getWarpRoutesBySymbolAndChains:", error);
+      console.error('Error in getWarpRoutesBySymbolAndChains:', error);
       // Never raise an error, return empty array instead
       return [];
     }
@@ -379,7 +378,7 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
 
       return deployConfigs;
     } catch (error) {
-      console.error("Error in getWarpDeployConfigsBySymbolAndChains:", error);
+      console.error('Error in getWarpDeployConfigsBySymbolAndChains:', error);
       // Never raise an error, return empty array instead
       return [];
     }
