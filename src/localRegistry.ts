@@ -16,6 +16,7 @@ import { config } from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { parse, stringify } from 'yaml';
+import { readYamlOrJson } from './configOpts.js';
 
 config();
 
@@ -115,9 +116,7 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
     this.logger.info(`Warp route added with ID: ${routeId}`);
   }
 
-  //TODO : add chain functionality
-  //TODO  : update chain functionality
-
+ 
   private generateRouteId(config: WarpCoreConfig, symbol?: string): string {
     // Create a deterministic ID based on the token connections
     const tokens = config.tokens || [];
@@ -168,6 +167,7 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
     chainName: ChainName
   ): Promise<ChainAddresses | null> {
     return this.sourceRegistry.getChainAddresses(chainName);
+    
   }
 
   async addChain(params: UpdateChainParams): Promise<void> {
@@ -182,6 +182,8 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
     }
 
     const yamlStr = stringify(metadata, null, 2);
+
+    this.logger.info(`yamlStr: ${yamlStr}`);
     if (!yamlStr || typeof yamlStr !== 'string') {
       throw new Error(`Failed to serialize config for "${chainName}"`);
     }
@@ -195,6 +197,8 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
       `${chainName}.yaml`
     );
 
+    this.logger.info(`filePath: ${filePath}`);
+
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, yamlStr);
 
@@ -202,7 +206,28 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
   }
 
   async updateChain(chains: UpdateChainParams): Promise<void> {
-    return this.sourceRegistry.updateChain(chains);
+    this.logger.info(`Updating chain: ${JSON.stringify(chains, null, 2)}`);
+    const filePath = path.join(
+      this.localStoragePath,
+      'chains',
+      `${chains.chainName}.yaml`
+    );
+
+    const chainConfig = readYamlOrJson(filePath, 'yaml');
+
+  
+    this.logger.info(`chainConfig: ${JSON.stringify(chainConfig, null, 2)}`);
+
+    if (typeof chainConfig !== 'object' || chainConfig === null) {
+      throw new Error(`Invalid chain config format for ${chains.chainName}`);
+    }
+
+    const updatedConfig = {
+      ...chainConfig,
+      addresses: chains.addresses,
+    };
+
+    fs.writeFileSync(filePath, stringify(updatedConfig, null, 2));
   }
 
   async removeChain(_chains: ChainName): Promise<void> {

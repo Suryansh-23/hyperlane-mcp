@@ -112,7 +112,7 @@ const githubRegistry = new GithubRegistry({
 // Initialize Local Registry with Github Registry as source
 const registry = new LocalRegistry({
   sourceRegistry: githubRegistry,
-  storagePath: homeDir,
+  storagePath: path.join(homeDir, '.hyperlane-mcp'),
   logger,
 });
 
@@ -419,6 +419,7 @@ server.tool(
 
     let warpRouteConfig: WarpRouteDeployConfig;
     const filePath = path.join(homeDir, '.hyperlane-mcp', fileName);
+    
 
     if (fs.existsSync(filePath)) {
       server.server.sendLoggingMessage({
@@ -576,13 +577,19 @@ server.tool(
     // Step 2: Deploy Core Contracts
     const deployConfig = { config: chainConfig, registry };
 
+    // server.server.sendLoggingMessage({
+    //   level: 'info',
+    //   data: `this is the deploy config: ${JSON.stringify(deployConfig, null, 2)}`,
+    // });
+
     const deployedAddress = await runCoreDeploy(deployConfig);
 
-    logger.info('Deployed Address: ' + deployedAddress);
     server.server.sendLoggingMessage({
       level: 'info',
-      data: `Core contracts deployed successfully for ${chainName}. Deployed address: ${deployedAddress}`,
+      data: `Core contracts deployed successfully for ${chainName}. Deployed address: ${JSON.stringify(deployedAddress, null, 2)}`,
     });
+
+
 
     // Step 3: Create Agent Configs
     const metadata = {
@@ -606,7 +613,11 @@ server.tool(
       )}`,
     });
 
-    const multiProvider = new MultiProvider(metadata);
+    const multiProvider = new MultiProvider(metadata , {
+      signers : {
+        [signer.address] : signer
+      }
+    });
 
     const outPath = path.join(
       homeDir!,
@@ -614,7 +625,8 @@ server.tool(
       `agent-config-${chainName}.json`
     );
 
-    await createAgentConfigs(registry, multiProvider, outPath, [chainName]);
+
+    await createAgentConfigs(registry, multiProvider, outPath, chainName);
 
     server.server.sendLoggingMessage({
       level: 'info',

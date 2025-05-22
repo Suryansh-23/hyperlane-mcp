@@ -202,6 +202,9 @@ export async function InitializeDeployment(): Promise<CoreConfig> {
       proxyAdmin,
     });
 
+    logger.info(`Core config: ${coreConfig}`);
+
+
     return coreConfig;
   } catch (e) {
     logger.error(`Error in creating core config: ${JSON.stringify(e)}`);
@@ -261,10 +264,14 @@ export async function runCoreDeploy(
 
   const coreConfig = await InitializeDeployment();
 
-  logger.info(`Core config: ${coreConfig}`);
+  writeYamlOrJson(path.join(process.env.CACHE_DIR || process.env.HOME!, '.hyperlane-mcp', 'chains' , `${chain}-core-config.yaml`), coreConfig, 'yaml');
+
+
+  logger.info(`Core config: ${JSON.stringify(coreConfig, null, 2)}`);
   logger.info(`Creating core module...`);
 
   let evmCoreModule: EvmCoreModule;
+
   try {
     evmCoreModule = await EvmCoreModule.create({
       chain,
@@ -272,16 +279,28 @@ export async function runCoreDeploy(
       multiProvider,
       // contractVerifier,
     });
+
+    logger.info(`Core module created: ${JSON.stringify(evmCoreModule, null, 2)}`);
   } catch (e) {
     logger.error(`Error in creating core module: ${e}`);
+    logger.error(`Error in creating core module: ${JSON.stringify(e, null, 2)}`);
     throw new Error(`Error in creating core module: ${e}`);
   }
+
+  logger.info(`Core module created: ${JSON.stringify(evmCoreModule, null, 2)}`);
 
   logger.info(`Deploying core contracts to ${chain}`);
 
   await completeDeploy(multiProvider, initialBalances, userAddress, [chain]);
   const deployedAddresses = evmCoreModule.serialize();
 
+  logger.info(`Deployed addresses: ${JSON.stringify(deployedAddresses, null, 2)}`);
+
+  config.registry.updateChain({
+    chainName: chain, 
+    addresses : deployedAddresses
+  })
+    
   return deployedAddresses; // Return the deployed addresses as the function output
 }
 
@@ -289,17 +308,24 @@ export async function createAgentConfigs(
   registry: BaseRegistry,
   multiProvider: MultiProvider,
   out: string,
-  chains?: string[]
+  chainName: string
 ): Promise<void> {
   const addresses = await registry.getAddresses();
-  const chainAddresses = filterAddresses(addresses, chains);
+  const chainAddresses = filterAddresses(addresses, ["holesky"]);
 
-  if (!chainAddresses) {
-    throw new Error('No chain addresses found');
-  }
+  logger.info(`chainAddresses: ${JSON.stringify(chainAddresses, null, 2)}`);
+
+  const ChainMetadata = await registry.getChainMetadata("holesky");
+  logger.info(`ChainMetadata: ${JSON.stringify(ChainMetadata, null, 2)}`);
 
   const core = HyperlaneCore.fromAddressesMap(chainAddresses, multiProvider);
-  const startBlocks = await getStartBlocks(chainAddresses, core, chainMetadata);
+
+  logger.info(`core: ${JSON.stringify(core, null, 2)}`);
+
+  const startBlocks = await getStartBlocks(chainAddresses, core, ChainMetadata);
+
+  logger.info(`startBlocks: ${JSON.stringify(startBlocks, null, 2)}`);
+
   await handleMissingInterchainGasPaymaster(chainAddresses);
 
   const agentConfig = buildAgentConfig(
@@ -308,6 +334,8 @@ export async function createAgentConfigs(
     chainAddresses as ChainMap<HyperlaneDeploymentArtifacts>,
     startBlocks
   );
+
+  logger.info(`agentConfig: ${JSON.stringify(agentConfig, null, 2)}`);
 
   await validateAgentConfig(agentConfig);
   logger.info(`\nWriting agent config to file ${out}`);

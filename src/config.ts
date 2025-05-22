@@ -8,6 +8,7 @@ import {
 } from "@hyperlane-xyz/sdk";
 import { callWithConfigCreationLogs } from "./utils.js";
 import { ChainTokenConfig } from "./types.js";
+import { privateKeyToSigner } from "./utils.js";
 
 export async function addNativeTokenConfig(
   metadata: ChainMetadata,
@@ -25,8 +26,10 @@ export async function addNativeTokenConfig(
 
 export async function createMultisignConfig(
   ismType: MultisigIsmConfig["type"]
+
 ): Promise<IsmConfig> {
-  const validators: string[] = [];
+  const signer = privateKeyToSigner(process.env.PRIVATE_KEY || "");
+  const validators: string[] = [signer.address];
   const threshold = 1;
 
   const result = MultisigIsmConfigSchema.safeParse({
