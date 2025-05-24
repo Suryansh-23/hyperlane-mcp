@@ -166,11 +166,16 @@ export function filterAddresses(
 export async function getStartBlocks(
   chainAddresses: ChainMap<ChainAddresses>,
   core: HyperlaneCore,
-  chainMetadata: any
+  chainMetadata: ChainMap<ChainMetadata>
 ): Promise<ChainMap<number | undefined>> {
   return promiseObjAll(
     objMap(chainAddresses, async (chain, _) => {
       const indexFrom = chainMetadata[chain].index?.from;
+      logger.info(
+        `Index from for ${chain}: ${indexFrom}, chain metadata: ${JSON.stringify(
+          chainMetadata[chain]
+        )}`
+      );
       if (indexFrom !== undefined) {
         return indexFrom;
       }
@@ -209,7 +214,8 @@ export function validateAgentConfig(agentConfig: AgentConfig) {
     console.warn(
       `\nAgent config is invalid, this is possibly due to required contracts not being deployed. See details below:\n${errorMessage}`
     );
-  } else {
-    console.log('✅ Agent config successfully created');
   }
+  // else {
+  // console.log('✅ Agent config successfully created');
+  // }
 }

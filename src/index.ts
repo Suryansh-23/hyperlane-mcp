@@ -36,7 +36,6 @@ import {
 } from './hyperlaneDeployer.js';
 import { RelayerRunner } from './RunRelayer.js';
 import { ValidatorRunner } from './RunValidator.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 
 // Load environment variables from .env file
 config();
@@ -115,6 +114,9 @@ const registry = new LocalRegistry({
   storagePath: path.join(homeDir, '.hyperlane-mcp'),
   logger,
 });
+
+// logger.info(JSON.stringify(await registry.getAddresses()));
+// logger.info(JSON.stringify(await registry.getWarpRoutes()));
 
 const URI_TEMPLATE_STRING = 'hyperlane-warp:///{symbol}/{/chain*}';
 const URI_TEMPLATE = URITemplate(URI_TEMPLATE_STRING);
@@ -419,7 +421,6 @@ server.tool(
 
     let warpRouteConfig: WarpRouteDeployConfig;
     const filePath = path.join(homeDir, '.hyperlane-mcp', fileName);
-    
 
     if (fs.existsSync(filePath)) {
       server.server.sendLoggingMessage({
@@ -586,10 +587,12 @@ server.tool(
 
     server.server.sendLoggingMessage({
       level: 'info',
-      data: `Core contracts deployed successfully for ${chainName}. Deployed address: ${JSON.stringify(deployedAddress, null, 2)}`,
+      data: `Core contracts deployed successfully for ${chainName}. Deployed address: ${JSON.stringify(
+        deployedAddress,
+        null,
+        2
+      )}`,
     });
-
-
 
     // Step 3: Create Agent Configs
     const metadata = {
@@ -613,10 +616,10 @@ server.tool(
       )}`,
     });
 
-    const multiProvider = new MultiProvider(metadata , {
-      signers : {
-        [signer.address] : signer
-      }
+    const multiProvider = new MultiProvider(metadata, {
+      signers: {
+        [signer.address]: signer,
+      },
     });
 
     const outPath = path.join(
@@ -624,7 +627,6 @@ server.tool(
       '.hyperlane-mcp',
       `agent-config-${chainName}.json`
     );
-
 
     await createAgentConfigs(registry, multiProvider, outPath, chainName);
 
