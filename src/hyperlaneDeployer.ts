@@ -344,8 +344,7 @@ export async function createAgentConfigs(
     chainAddresses as ChainMap<HyperlaneDeploymentArtifacts>,
     startBlocks
   );
-
-  logger.info(`agentConfig: ${JSON.stringify(agentConfig, null, 2)}`);
+  // logger.info(`agentConfig: ${JSON.stringify(agentConfig, null, 2)}`);
 
   await validateAgentConfig(agentConfig);
   logger.info(`\nWriting agent config to file ${out}`);

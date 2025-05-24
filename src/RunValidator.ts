@@ -22,7 +22,7 @@ export class ValidatorRunner {
   private readonly validatorSignaturesDir: string;
   private readonly validatorDbPath: string;
   private containerId: string | null = null;
-  private latestTag: string | null = DEFAULT_VALIDATOR_TAG;
+  private latestTag: string = DEFAULT_VALIDATOR_TAG;
 
   constructor(chainName: string, validatorKey: string, configFilePath: string) {
     this.chainName = chainName;
@@ -88,10 +88,12 @@ export class ValidatorRunner {
             reject(err);
             return;
           }
+
           if (!stream) {
             reject(new Error('Stream is undefined'));
             return;
           }
+
           docker.modem.followProgress(
             stream,
             (err: Error | null) => {
@@ -137,7 +139,7 @@ export class ValidatorRunner {
           },
           {
             Source: this.validatorSignaturesDir,
-            Target: '/tmp/validator-signatures',
+            Target: '/validator-signatures',
             Type: 'bind',
           },
         ],
@@ -151,7 +153,7 @@ export class ValidatorRunner {
         '--checkpointSyncer.type',
         'localStorage',
         '--checkpointSyncer.path',
-        '/tmp/validator-signatures',
+        '/validator-signatures',
         '--validator.key',
         this.validatorKey,
       ],

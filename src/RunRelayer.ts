@@ -3,16 +3,10 @@ import path from 'path';
 import fs from 'fs';
 import { ChainName } from '@hyperlane-xyz/sdk';
 import logger from './logger.js';
+import { createDirectory } from './utils.js';
+import { getLatestImageTag, fetchImageTags } from './gcr.js';
 
 const docker = new Docker();
-
-// Utility to create directories if they don't exist
-const createDirectory = (directoryPath: string): void => {
-  if (!fs.existsSync(directoryPath)) {
-    fs.mkdirSync(directoryPath, { recursive: true });
-    console.log(`Created directory: ${directoryPath}`);
-  }
-};
 
 export interface RelayerConfig {
   relayChains: ChainName[];
@@ -20,6 +14,8 @@ export interface RelayerConfig {
   configFilePath: string;
   validatorChainName: string;
 }
+
+const DEFAULT_RELAYER_TAG = 'agents-v1.4.0';
 
 export class RelayerRunner {
   private readonly relayChains: ChainName[];
@@ -29,6 +25,7 @@ export class RelayerRunner {
   private readonly validatorSignaturesDir: string;
   private readonly validatorChainName: string;
   private containerId: string | null = null;
+  private latestTag: string = DEFAULT_RELAYER_TAG;
 
   constructor(
     relayChains: string[],
@@ -47,7 +44,7 @@ export class RelayerRunner {
     this.validatorSignaturesDir = path.resolve(
       `${
         process.env.CACHE_DIR || process.env.HOME!
-      }/.hyperlane-mcp/logs/tmp/hyperlane-validator-signatures-${validatorChainName}`
+      }/.hyperlane-mcp/logs/hyperlane-validator-signatures-${validatorChainName}`
     );
     this.validatorChainName = validatorChainName;
 
@@ -55,8 +52,20 @@ export class RelayerRunner {
     createDirectory(this.relayerDbPath);
   }
 
+  private async initializeLatestTag(): Promise<void> {
+    if (this.latestTag !== DEFAULT_RELAYER_TAG) {
+      return;
+    }
+
+    logger.info(`Initializing latest Docker image tag for relayer...`);
+    this.latestTag =
+      getLatestImageTag(await fetchImageTags()) || DEFAULT_RELAYER_TAG;
+    logger.info(`Latest Docker image tag in relayer: ${this.latestTag}`);
+  }
+
   async run(): Promise<void> {
     try {
+      await this.initializeLatestTag();
       await this.pullDockerImage();
       await this.createAndStartContainer();
       await this.monitorLogs();
@@ -74,12 +83,21 @@ export class RelayerRunner {
     console.log(`Pulling latest Hyperlane agent Docker image...`);
     await new Promise<void>((resolve, reject) => {
       docker.pull(
-        'gcr.io/abacus-labs-dev/hyperlane-agent:agents-v1.1.0',
-        (err: Error | null, stream: NodeJS.ReadableStream) => {
+        `gcr.io/abacus-labs-dev/hyperlane-agent:${this.latestTag}`,
+        {
+          platform: 'linux/amd64/v8',
+        },
+        (err: Error | null, stream: NodeJS.ReadableStream | undefined) => {
           if (err) {
             reject(err);
             return;
           }
+
+          if (!stream) {
+            reject(new Error('Stream is undefined'));
+            return;
+          }
+
           docker.modem.followProgress(
             stream,
             (err: Error | null) => {
@@ -102,9 +120,10 @@ export class RelayerRunner {
       )}...`
     );
     const container = await docker.createContainer({
-      Image: 'gcr.io/abacus-labs-dev/hyperlane-agent:agents-v1.1.0',
+      Image: `gcr.io/abacus-labs-dev/hyperlane-agent:${this.latestTag}`,
       Env: [`CONFIG_FILES=${this.configFilePath}`],
       HostConfig: {
+        NetworkMode: 'host',
         Mounts: [
           {
             Source: path.resolve(this.configFilePath),
@@ -124,7 +143,7 @@ export class RelayerRunner {
           },
           {
             Source: this.validatorSignaturesDir,
-            Target: '/tmp/validator-signatures',
+            Target: '/validator-signatures',
             Type: 'bind',
             ReadOnly: true,
           },
@@ -142,6 +161,7 @@ export class RelayerRunner {
         this.relayerKey,
       ],
       Tty: true,
+      NetworkDisabled: false,
     });
 
     this.containerId = container.id;
