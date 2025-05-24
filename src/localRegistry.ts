@@ -602,7 +602,7 @@ export class LocalRegistry extends GithubRegistry implements IRegistry {
    * @returns Array of WarpCoreConfig objects that match the criteria (empty if none found)
    */
   async getWarpRoutesBySymbolAndChains(
-    symbol: string,
+    symbol?: string,
     chainNames?: string[]
   ): Promise<WarpCoreConfig[]> {
     try {

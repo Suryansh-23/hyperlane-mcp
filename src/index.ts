@@ -9,6 +9,9 @@ import {
 } from '@hyperlane-xyz/sdk';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+} from "@hyperlane-xyz/sdk";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   ListResourceTemplatesRequestSchema,
   ReadResourceRequestSchema,
@@ -71,6 +74,8 @@ const server = new McpServer(
 // Create directory for hyperlane-mcp if it doesn't exist
 const homeDir = process.env.CACHE_DIR || process.env.HOME;
 let mcpDir;
+const homeDir = process.env.CACHE_DIR || process.env.HOME;
+let mcpDir;
 if (homeDir) {
   mcpDir = path.join(homeDir, '.hyperlane-mcp');
   if (!fs.existsSync(mcpDir)) {
@@ -91,7 +96,7 @@ const signer = privateKeyToSigner(key);
 
 // Initialize Github Registry once for server
 const githubRegistry = new GithubRegistry({
-  authToken: process.env.GITHUB_TOKEN,
+  authToken: process.env.GITHUB_TOKEN || "",
 });
 
 // Initialize Local Registry with Github Registry as source
@@ -108,7 +113,7 @@ const URI_TEMPLATE_STRING = 'hyperlane-warp:///{symbol}/{/chain*}';
 const URI_TEMPLATE = URITemplate(URI_TEMPLATE_STRING);
 const URI_OBJ_TEMPATE = z.object({
   symbol: z.string(),
-  chain: z.array(z.string()),
+  chain: z.array(z.enum(HYPERLANE_CHAINS as [string, ...string[]])),
 });
 
 server.server.setRequestHandler(
@@ -287,7 +292,7 @@ server.tool(
         'So, please make sure that a warp route config exists for the asset & chains before using this tool.'
     ),
   },
-  async ({ chains, amount, recipient, warpCoreConfig }) => {
+  async ({ chains, amount, recipient, symbol }) => {
     server.server.sendLoggingMessage({
       level: 'info',
       data: `Starting cross-chain asset transfer...
@@ -394,6 +399,10 @@ server.tool(
       .describe('Token types to deploy'),
   },
   async ({ warpChains, tokenTypes }) => {
+    if (warpChains.length !== tokenTypes.length) {
+      throw new Error("Warp chains and token types must have the same length");
+    }
+
     server.server.sendLoggingMessage({
       level: 'info',
       data: `Deploying warp route with chains: ${warpChains.join(
@@ -408,7 +417,7 @@ server.tool(
     let warpRouteConfig: WarpRouteDeployConfig;
     const filePath = path.join(homeDir, '.hyperlane-mcp', fileName);
 
-    if (fs.existsSync(filePath)) {
+    if (existingConfig && existingConfig.length > 0) {
       server.server.sendLoggingMessage({
         level: 'info',
         data: `Warp Route Already exists @ ${fileName} already exists. Skipping Config Creation.`,
@@ -468,14 +477,14 @@ server.tool(
       registry,
       chainMetadata,
       multiProvider,
-      warpRouteConfig,
+      warpRouteDeployConfig,
       filePath,
     });
 
     server.server.sendLoggingMessage({
       level: 'info',
       data: `Warp route deployed successfully. Config: ${JSON.stringify(
-        warpRouteConfig,
+        warpRouteDeployConfig,
         null,
         2
       )}`,

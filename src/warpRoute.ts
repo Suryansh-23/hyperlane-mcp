@@ -319,13 +319,13 @@ export async function getWarpCoreConfig(
 export async function deployWarpRoute({
   registry,
   multiProvider,
-  warpRouteConfig,
+  warpRouteDeployConfig: warpRouteConfig,
   filePath,
 }: {
   registry: BaseRegistry;
   chainMetadata: ChainMap<ChainMetadata>;
   multiProvider: MultiProvider;
-  warpRouteConfig: WarpRouteDeployConfig;
+  warpRouteDeployConfig: WarpRouteDeployConfig;
   filePath: string;
 }): Promise<WarpCoreConfig> {
   const deployedContracts = await executeDeploy(

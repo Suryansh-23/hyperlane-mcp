@@ -31,7 +31,7 @@
     "@modelcontextprotocol/sdk": "1.7.0",
     "dockerode": "^4.0.6",
     "dotenv": "^16.5.0",
-    "ethers": "^5.7.2",
+    "ethers": "^5.8.0",
     "ethers-types": "^3.18.1",
     "uri-templates": "^0.2.0",
     "yaml": "^2.7.1",
