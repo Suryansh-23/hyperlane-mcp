@@ -26,7 +26,7 @@ import {
   createMerkleTreeConfig,
   createMultisignConfig,
 } from './config.js';
-import logger from './index.js';
+import logger from './logger.js';
 import { ChainConfig } from './types.js';
 import {
   assertSigner,
@@ -202,8 +202,6 @@ export async function InitializeDeployment(): Promise<CoreConfig> {
       proxyAdmin,
     });
 
-    logger.info(`Core config: ${coreConfig}`);
-
     return coreConfig;
   } catch (e) {
     logger.error(`Error in creating core config: ${JSON.stringify(e)}`);
@@ -287,9 +285,9 @@ export async function runCoreDeploy(
       // contractVerifier,
     });
 
-    logger.info(
-      `Core module created: ${JSON.stringify(evmCoreModule, null, 2)}`
-    );
+    // logger.info(
+    //   `Core module created: ${JSON.stringify(evmCoreModule, null, 2)}`
+    // );
   } catch (e) {
     logger.error(`Error in creating core module: ${e}`);
     logger.error(
@@ -299,7 +297,6 @@ export async function runCoreDeploy(
   }
 
   logger.info(`Core module created: ${JSON.stringify(evmCoreModule, null, 2)}`);
-
   logger.info(`Deploying core contracts to ${chain}`);
 
   await completeDeploy(multiProvider, initialBalances, userAddress, [chain]);
@@ -352,7 +349,15 @@ export async function createAgentConfigs(
 
   await validateAgentConfig(agentConfig);
   logger.info(`\nWriting agent config to file ${out}`);
-  writeYamlOrJson(out, agentConfig, 'json');
+
+  if (!fs.existsSync(path.dirname(out))) {
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+  }
+  writeYamlOrJson(
+    path.join(out, `${chainName}-agent-config.json`),
+    agentConfig,
+    'json'
+  );
   logger.info(`Agent config written to ${out}`);
 }
 

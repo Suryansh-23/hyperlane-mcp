@@ -1,7 +1,6 @@
 import {
   BaseRegistry,
   ChainAddresses,
-  GithubRegistry,
   IRegistry,
 } from '@hyperlane-xyz/registry';
 import {
@@ -24,7 +23,8 @@ import {
   ProtocolType,
 } from '@hyperlane-xyz/utils';
 import { ethers } from 'ethers';
-import logger from './index.js';
+import fs from 'fs';
+import logger from './logger.js';
 
 export function privateKeyToSigner(key: string): ethers.Wallet {
   if (!key) throw new Error('No private key provided');
@@ -219,3 +219,11 @@ export function validateAgentConfig(agentConfig: AgentConfig) {
   // console.log('✅ Agent config successfully created');
   // }
 }
+
+// Utility to create directories if they don't exist
+export const createDirectory = (directoryPath: string): void => {
+  if (!fs.existsSync(directoryPath)) {
+    fs.mkdirSync(directoryPath, { recursive: true });
+    logger.info(`Created directory: ${directoryPath}`);
+  }
+};

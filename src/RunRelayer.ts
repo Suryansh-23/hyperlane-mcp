@@ -2,8 +2,7 @@ import Docker from 'dockerode';
 import path from 'path';
 import fs from 'fs';
 import { ChainName } from '@hyperlane-xyz/sdk';
-import logger from './index.js';
-
+import logger from './logger.js';
 
 const docker = new Docker();
 
@@ -40,9 +39,15 @@ export class RelayerRunner {
     this.relayChains = relayChains;
     this.relayerKey = relayerKey;
     this.configFilePath = configFilePath;
-    this.relayerDbPath = path.resolve(`${process.env.CACHE_DIR || process.env.HOME!}/.hyperlane-mcp/logs/hyperlane_db_relayer`);
+    this.relayerDbPath = path.resolve(
+      `${
+        process.env.CACHE_DIR || process.env.HOME!
+      }/.hyperlane-mcp/logs/hyperlane_db_relayer`
+    );
     this.validatorSignaturesDir = path.resolve(
-      `${process.env.CACHE_DIR || process.env.HOME!}/.hyperlane-mcp/logs/tmp/hyperlane-validator-signatures-${validatorChainName}`
+      `${
+        process.env.CACHE_DIR || process.env.HOME!
+      }/.hyperlane-mcp/logs/tmp/hyperlane-validator-signatures-${validatorChainName}`
     );
     this.validatorChainName = validatorChainName;
 
@@ -57,7 +62,9 @@ export class RelayerRunner {
       await this.monitorLogs();
     } catch (error) {
       logger.error(
-        `Error starting relayer for chains: ${this.relayChains.join(', ')} : ${error}`
+        `Error starting relayer for chains: ${this.relayChains.join(
+          ', '
+        )} : ${error}`
       );
       throw error;
     }
@@ -101,7 +108,12 @@ export class RelayerRunner {
         Mounts: [
           {
             Source: path.resolve(this.configFilePath),
-            Target: path.join(process.env.CACHE_DIR || process.env.HOME!, '.hyperlane-mcp', 'agents', `${this.validatorChainName}-agent-config.json`),
+            Target: path.join(
+              process.env.CACHE_DIR || process.env.HOME!,
+              '.hyperlane-mcp',
+              'agents',
+              `${this.validatorChainName}-agent-config.json`
+            ),
             Type: 'bind',
             ReadOnly: true,
           },

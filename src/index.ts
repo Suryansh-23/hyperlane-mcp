@@ -36,24 +36,10 @@ import {
 } from './hyperlaneDeployer.js';
 import { RelayerRunner } from './RunRelayer.js';
 import { ValidatorRunner } from './RunValidator.js';
+import logger from './logger.js';
 
 // Load environment variables from .env file
 config();
-
-// Set up file logging
-const logFile = fs.createWriteStream('./run.log', {
-  flags: 'a',
-});
-const logger = {
-  info: (message: string) => {
-    const timestamp = new Date().toISOString();
-    logFile.write(`[${timestamp}] INFO: ${message}\n`);
-  },
-  error: (message: string) => {
-    const timestamp = new Date().toISOString();
-    logFile.write(`[${timestamp}] ERROR: ${message}\n`);
-  },
-};
 
 // Create server instance
 const server = new McpServer(
@@ -622,12 +608,7 @@ server.tool(
       },
     });
 
-    const outPath = path.join(
-      homeDir!,
-      '.hyperlane-mcp',
-      `agent-config-${chainName}.json`
-    );
-
+    const outPath = path.join(mcpDir, 'agents');
     await createAgentConfigs(registry, multiProvider, outPath, chainName);
 
     server.server.sendLoggingMessage({
@@ -663,10 +644,8 @@ server.tool(
     });
 
     const configFilePath = path.join(
-      homeDir!,
-      '.hyperlane-mcp',
-      'agents',
-      `${chainName}-agent-config.json`
+      mcpDir,
+      `agents/${chainName}-agent-config.json`
     );
 
     server.server.sendLoggingMessage({
@@ -712,7 +691,7 @@ server.tool(
     relayChains: z.array(z.string()).describe('Chains to relay between'),
     validatorChainName: z.string().describe('Name of the validator chain'),
   },
-  async ({ relayChains,validatorChainName }) => {
+  async ({ relayChains, validatorChainName }) => {
     server.server.sendLoggingMessage({
       level: 'info',
       data: `Starting relayer for chains: ${relayChains.join(', ')}...`,
@@ -771,5 +750,3 @@ main().catch((error) => {
   console.error('Fatal error in main():', error);
   process.exit(1);
 });
-
-export default logger;
