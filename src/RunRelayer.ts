@@ -2,6 +2,8 @@ import Docker from 'dockerode';
 import path from 'path';
 import fs from 'fs';
 import { ChainName } from '@hyperlane-xyz/sdk';
+import logger from './index.js';
+
 
 const docker = new Docker();
 
@@ -26,6 +28,7 @@ export class RelayerRunner {
   private readonly configFilePath: string;
   private readonly relayerDbPath: string;
   private readonly validatorSignaturesDir: string;
+  private readonly validatorChainName: string;
   private containerId: string | null = null;
 
   constructor(
@@ -37,10 +40,11 @@ export class RelayerRunner {
     this.relayChains = relayChains;
     this.relayerKey = relayerKey;
     this.configFilePath = configFilePath;
-    this.relayerDbPath = path.resolve('hyperlane_db_relayer');
+    this.relayerDbPath = path.resolve(`${process.env.CACHE_DIR || process.env.HOME!}/.hyperlane-mcp/logs/hyperlane_db_relayer`);
     this.validatorSignaturesDir = path.resolve(
-      `tmp/hyperlane-validator-signatures-${validatorChainName}`
+      `${process.env.CACHE_DIR || process.env.HOME!}/.hyperlane-mcp/logs/tmp/hyperlane-validator-signatures-${validatorChainName}`
     );
+    this.validatorChainName = validatorChainName;
 
     // Ensure required directories exist
     createDirectory(this.relayerDbPath);
@@ -52,9 +56,8 @@ export class RelayerRunner {
       await this.createAndStartContainer();
       await this.monitorLogs();
     } catch (error) {
-      console.error(
-        `Error starting relayer for chains: ${this.relayChains.join(', ')}`,
-        error
+      logger.error(
+        `Error starting relayer for chains: ${this.relayChains.join(', ')} : ${error}`
       );
       throw error;
     }
@@ -86,19 +89,19 @@ export class RelayerRunner {
   }
 
   private async createAndStartContainer(): Promise<void> {
-    console.log(
+    logger.info(
       `Creating container for relayer on chains: ${this.relayChains.join(
         ', '
       )}...`
     );
     const container = await docker.createContainer({
       Image: 'gcr.io/abacus-labs-dev/hyperlane-agent:agents-v1.1.0',
-      Env: [`CONFIG_FILES=/config/agent-config.json`],
+      Env: [`CONFIG_FILES=${this.configFilePath}`],
       HostConfig: {
         Mounts: [
           {
             Source: path.resolve(this.configFilePath),
-            Target: '/config/agent-config.json',
+            Target: path.join(process.env.CACHE_DIR || process.env.HOME!, '.hyperlane-mcp', 'agents', `${this.validatorChainName}-agent-config.json`),
             Type: 'bind',
             ReadOnly: true,
           },
@@ -131,11 +134,11 @@ export class RelayerRunner {
 
     this.containerId = container.id;
 
-    console.log(
+    logger.info(
       `Starting relayer for chains: ${this.relayChains.join(', ')}...`
     );
     await container.start();
-    console.log(
+    logger.info(
       `Relayer for chains: ${this.relayChains.join(', ')} started successfully.`
     );
   }
@@ -146,17 +149,17 @@ export class RelayerRunner {
     }
 
     const container = docker.getContainer(this.containerId);
-    console.log('Fetching container logs...');
+    logger.info('Fetching container logs...');
     const logStream = await container.logs({
       follow: true,
       stdout: true,
       stderr: true,
     });
     logStream.on('data', (chunk) => {
-      console.log(chunk.toString());
+      logger.info(chunk.toString());
     });
 
-    console.log('Relayer is now running. Monitoring logs...');
+    logger.info('Relayer is now running. Monitoring logs...');
   }
 
   async checkStatus(): Promise<void> {
@@ -166,12 +169,12 @@ export class RelayerRunner {
         (c) => c.Id === this.containerId
       );
       if (runningContainer) {
-        console.log(`Relayer container is running: ${runningContainer.Id}`);
+        logger.info(`Relayer container is running: ${runningContainer.Id}`);
       } else {
-        console.log('Relayer container is not running.');
+        logger.info('Relayer container is not running.');
       }
     } catch (error) {
-      console.error('Error checking container status:', error);
+      logger.error(`Error checking container status: ${error}`);
       throw error;
     }
   }

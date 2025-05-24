@@ -655,14 +655,29 @@ server.tool(
   'Runs a validator for a specific chain.',
   {
     chainName: z.string().describe('Name of the chain to validate'),
-    validatorKey: z.string().describe('Private key for the validator'),
-    configFilePath: z.string().describe('Path to the agent config file'),
   },
-  async ({ chainName, validatorKey, configFilePath }) => {
+  async ({ chainName }) => {
     server.server.sendLoggingMessage({
       level: 'info',
       data: `Starting validator for chain: ${chainName}...`,
     });
+
+    const configFilePath = path.join(
+      homeDir!,
+      '.hyperlane-mcp',
+      'agents',
+      `${chainName}-agent-config.json`
+    );
+
+    server.server.sendLoggingMessage({
+      level: 'info',
+      data: `Config file path: ${configFilePath}`,
+    });
+
+    const validatorKey = process.env.PRIVATE_KEY;
+    if (!validatorKey) {
+      throw new Error('No private key provided');
+    }
 
     try {
       const validatorRunner = new ValidatorRunner(
@@ -695,15 +710,25 @@ server.tool(
   'Runs a relayer for specified chains.',
   {
     relayChains: z.array(z.string()).describe('Chains to relay between'),
-    relayerKey: z.string().describe('Private key for the relayer'),
-    configFilePath: z.string().describe('Path to the agent config file'),
     validatorChainName: z.string().describe('Name of the validator chain'),
   },
-  async ({ relayChains, relayerKey, configFilePath, validatorChainName }) => {
+  async ({ relayChains,validatorChainName }) => {
     server.server.sendLoggingMessage({
       level: 'info',
       data: `Starting relayer for chains: ${relayChains.join(', ')}...`,
     });
+
+    const configFilePath = path.join(
+      homeDir!,
+      '.hyperlane-mcp',
+      'agents',
+      `${validatorChainName}-agent-config.json`
+    );
+
+    const relayerKey = process.env.PRIVATE_KEY;
+    if (!relayerKey) {
+      throw new Error('No private key provided');
+    }
 
     try {
       const relayerRunner = new RelayerRunner(
