@@ -1,12 +1,12 @@
-import { TransactionReceipt } from "@ethersproject/abstract-provider";
-import { BaseRegistry } from "@hyperlane-xyz/registry";
+import { TransactionReceipt } from '@ethersproject/abstract-provider';
+import { BaseRegistry } from '@hyperlane-xyz/registry';
 import {
   ChainName,
   DispatchedMessage,
   HyperlaneCore,
   MultiProvider,
-} from "@hyperlane-xyz/sdk";
-import { addressToBytes32 } from "@hyperlane-xyz/utils";
+} from '@hyperlane-xyz/sdk';
+import { addressToBytes32 } from '@hyperlane-xyz/utils';
 
 export async function msgTransfer({
   origin,

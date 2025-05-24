@@ -1,4 +1,4 @@
-import { AddWarpRouteOptions, BaseRegistry } from "@hyperlane-xyz/registry";
+import { AddWarpRouteOptions, BaseRegistry } from '@hyperlane-xyz/registry';
 import {
   ChainMap,
   ChainMetadata,
@@ -21,11 +21,11 @@ import {
   WarpCoreConfig,
   WarpRouteDeployConfig,
   WarpRouteDeployConfigSchema,
-} from "@hyperlane-xyz/sdk";
-import { assert, objMap, ProtocolType } from "@hyperlane-xyz/utils";
-import fs from "fs";
-import { stringify } from "yaml";
-import { TYPE_CHOICES, WarpRouteDeployConfigMailboxRequired } from "./types.js";
+} from '@hyperlane-xyz/sdk';
+import { assert, objMap, ProtocolType } from '@hyperlane-xyz/utils';
+import fs from 'fs';
+import { stringify } from 'yaml';
+import { TYPE_CHOICES, WarpRouteDeployConfigMailboxRequired } from './types.js';
 
 function restrictChoices(typeChoices: TokenType[]) {
   return TYPE_CHOICES.filter((choice) => typeChoices.includes(choice.name));
@@ -47,12 +47,12 @@ export async function createWarpRouteDeployConfig({
   //   logBlue("Creating a new warp route deployment config...");
   if (warpChains.length < 2 || tokenTypes.length < 2) {
     throw new Error(
-      "At least two warp chains and two token types are required."
+      'At least two warp chains and two token types are required.'
     );
   }
   if (warpChains.length !== tokenTypes.length) {
     throw new Error(
-      "The number of warp chains and token types must be the same."
+      'The number of warp chains and token types must be the same.'
     );
   }
 
@@ -94,9 +94,9 @@ export async function createWarpRouteDeployConfig({
           owner,
           isNft,
           proxyAdmin,
-          collateralChainName: "", // This will be derived correctly by zod.parse() below
+          collateralChainName: '', // This will be derived correctly by zod.parse() below
           interchainSecurityModule,
-          mailbox: "", // This will need to be set to the actual mailbox address
+          mailbox: '', // This will need to be set to the actual mailbox address
         };
         typeChoices = restrictChoices([
           TokenType.syntheticRebase,
@@ -147,7 +147,7 @@ export async function createWarpRouteDeployConfig({
           proxyAdmin,
           isNft,
           interchainSecurityModule,
-          mailbox: "",
+          mailbox: '',
         };
         break;
       case TokenType.fastCollateral:
@@ -157,7 +157,7 @@ export async function createWarpRouteDeployConfig({
           proxyAdmin,
           isNft,
           interchainSecurityModule,
-          token: "",
+          token: '',
           mailbox,
         };
         break;
@@ -297,10 +297,10 @@ export async function getWarpCoreConfig(
   );
   assert(
     tokenMetadata && isTokenMetadata(tokenMetadata),
-    "Missing required token metadata"
+    'Missing required token metadata'
   );
   const { decimals, symbol, name } = tokenMetadata;
-  assert(decimals, "Missing decimals on token metadata");
+  assert(decimals, 'Missing decimals on token metadata');
 
   generateTokenConfigs(
     warpCoreConfig,
