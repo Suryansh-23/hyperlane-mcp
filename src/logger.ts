@@ -1,7 +1,18 @@
 import fs from 'fs';
+import path from 'path';
+
+const homeDir = process.env.HOME || process.env.CACHE_DIR;
+
+let logDir;
+if (homeDir) {
+  logDir = path.join(homeDir, '.hyperlane-mcp');
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir);
+  }
+}
 
 // Set up file logging
-const logFile = fs.createWriteStream('./run.log', {
+const logFile = fs.createWriteStream(`${logDir}/run.log`, {
   flags: 'a',
 });
 
