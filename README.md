@@ -164,6 +164,7 @@ For Claude Desktop or other MCP clients, add this configuration:
       "env": {
         "PRIVATE_KEY": "your_private_key",
         "GITHUB_TOKEN": "your_github_token"
+        "CACHE_DIR": "your_cache_dir"
       }
     }
   }
