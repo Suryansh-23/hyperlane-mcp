@@ -144,7 +144,9 @@ server.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   chain = chain.filter((c) => c !== '');
   server.server.sendLoggingMessage({
     level: 'info',
-    data: `Fetching warp routes for symbol: ${typeof symbol}:${symbol} and chains: ${typeof chain}:${chain}`,
+    data: `Fetching warp routes for symbol: ${typeof symbol}:${symbol} and chains: ${typeof chain}:${JSON.stringify(
+      chain
+    )}`,
   });
 
   let warpRoutes;
@@ -264,15 +266,16 @@ Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}
 
 server.tool(
   'cross-chain-asset-transfer',
-  'Transfers an asset across chains for the specified token (specified in the WarpCoreConfig), amount, chains and recipient.\n' +
-    'You can use the `deploy-warp-route` tool to deploy a warp route for the asset and chains.\n' +
-    'You can use the `list-resources` tool to fetch the warp route config for the asset and chains.\n' +
+  'Transfers an asset across chains for the specified token symbol, amount, chains and recipient.\n' +
+    'This tool automatically fetches the warp route config from the local registry.\n' +
+    'If no warp route config exists for the specified symbol and chains, you will need to deploy one first using the `deploy-warp-route` tool.\n' +
     'This tool returns the transaction hash and message ID for the dispatched messages for each transfer between the chains.',
   {
+    symbol: z.string().describe('Token symbol to transfer'),
     chains: z
       .array(z.string())
       .describe('Chains to transfer asset between in order of transfer'),
-    amount: z.string().describe('Amount to transfer'),
+    amount: z.string().describe('Amount to transfer (in wei or token units)'),
     recipient: z
       .string()
       .length(42)
@@ -280,20 +283,40 @@ server.tool(
       .optional()
       .default(signer.address)
       .describe('Recipient address'),
-    warpCoreConfig: WarpCoreConfigSchema.describe(
-      'Warp core config for the asset transfer.\n' +
-        'You can use fetch the warp route config using the resources.\n' +
-        "If the warp config for the asset & chains doesn't exist. You can create it using the deploy-warp-route tool.\n" +
-        'So, please make sure that a warp route config exists for the asset & chains before using this tool.'
-    ),
   },
-  async ({ chains, amount, recipient, warpCoreConfig }) => {
+  async ({ symbol, chains, amount, recipient }) => {
     server.server.sendLoggingMessage({
       level: 'info',
       data: `Starting cross-chain asset transfer...
-Parameters: chains=${chains.join(
+Parameters: symbol=${symbol}, chains=${chains.join(
         ', '
-      )}, amount=${amount}, recipient=${recipient}, warpCoreConfig=${JSON.stringify(
+      )}, amount=${amount}, recipient=${recipient}`,
+    });
+
+    // Fetch warp route config from registry
+    const warpRoutes = await registry.getWarpRoutesBySymbolAndChains(
+      symbol,
+      chains
+    );
+
+    if (!warpRoutes || warpRoutes.length === 0) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `No warp route config found for symbol "${symbol}" and chains [${chains.join(
+              ', '
+            )}]. Please deploy a warp route first using the 'deploy-warp-route' tool.`,
+          },
+        ],
+      };
+    }
+
+    const warpCoreConfig = warpRoutes[0]; // Use the first matching config
+
+    server.server.sendLoggingMessage({
+      level: 'info',
+      data: `Found warp core config: ${JSON.stringify(
         warpCoreConfig,
         null,
         2
