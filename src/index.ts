@@ -266,10 +266,29 @@ Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}
 
 server.tool(
   'cross-chain-asset-transfer',
-  'Transfers an asset across chains for the specified token symbol, amount, chains and recipient.\n' +
-    'This tool automatically fetches the warp route config from the local registry.\n' +
-    'If no warp route config exists for the specified symbol and chains, you will need to deploy one first using the `deploy-warp-route` tool.\n' +
-    'This tool returns the transaction hash and message ID for the dispatched messages for each transfer between the chains.',
+  'Transfers tokens/assets between multiple blockchain networks using Hyperlane\'s cross-chain infrastructure.\n\n' +
+    'FUNCTIONALITY:\n' +
+    '• Moves tokens from one blockchain to another (e.g., USDC from Ethereum to Polygon)\n' +
+    '• Supports sequential transfers across multiple chains in a single operation\n' +
+    '• Handles various token types including native tokens, ERC20 tokens, and synthetic tokens\n\n' +
+    'PREREQUISITES:\n' +
+    '• A warp route must exist for the specified token symbol and chain combination\n' +
+    '• If no warp route exists, deploy one first using the `deploy-warp-route` tool\n' +
+    '• Sufficient token balance on the origin chain\n' +
+    '• Sufficient gas tokens on all involved chains for transaction fees\n\n' +
+    'PARAMETERS:\n' +
+    '• symbol: The token identifier (e.g., "USDC", "ETH", "WBTC")\n' +
+    '• chains: Array of blockchain names in transfer order (e.g., ["ethereum", "polygon", "arbitrum"])\n' +
+    '• amount: Token amount in wei or smallest token units (e.g., "1000000" for 1 USDC with 6 decimals)\n' +
+    '• recipient: Destination wallet address (defaults to sender if not specified)\n\n' +
+    'OUTPUT:\n' +
+    '• Returns transaction hashes and message IDs for each cross-chain transfer\n' +
+    '• Each transfer between adjacent chains generates one transaction\n' +
+    '• Use message IDs to track delivery status across chains\n\n' +
+    'EXAMPLE USE CASES:\n' +
+    '• Bridge USDC from Ethereum to Polygon\n' +
+    '• Multi-hop transfer: ETH from Ethereum → Arbitrum → Base\n' +
+    '• Cross-chain token arbitrage or yield farming',
   {
     symbol: z.string().describe('Token symbol to transfer'),
     chains: z
