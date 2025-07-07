@@ -1,4 +1,4 @@
-import { BaseRegistry } from "@hyperlane-xyz/registry";
+import { BaseRegistry } from '@hyperlane-xyz/registry';
 import {
   ChainName,
   DispatchedMessage,
@@ -10,9 +10,9 @@ import {
   TokenAmount,
   WarpCore,
   WarpCoreConfig,
-} from "@hyperlane-xyz/sdk";
-import { parseWarpRouteMessage, timeout } from "@hyperlane-xyz/utils";
-import { ContractReceipt } from "ethers";
+} from '@hyperlane-xyz/sdk';
+import { parseWarpRouteMessage, timeout } from '@hyperlane-xyz/utils';
+import { ContractReceipt } from 'ethers';
 
 export async function assetTransfer({
   warpCoreConfig,
@@ -43,7 +43,7 @@ export async function assetTransfer({
           multiProvider,
         }),
         120_000,
-        "Timed out waiting for messages to be delivered"
+        'Timed out waiting for messages to be delivered'
       );
 
       if (deliveryResult) {
@@ -92,14 +92,18 @@ async function executeDelivery({
   const tokensForRoute = warpCore.getTokensForRoute(origin, destination);
   if (tokensForRoute.length === 0) {
     // console.error(`No Warp Routes found from ${origin} to ${destination}`);
-    throw new Error("Error finding warp route");
+    throw new Error(
+      `Error finding warp route.\n tokensForRoute: ${JSON.stringify(
+        tokensForRoute
+      )}`
+    );
   } else if (tokensForRoute.length === 1) {
     token = tokensForRoute[0];
   } else {
     // console.info(`Please select a token from the Warp config`);
     // const routerAddress = await runTokenSelectionStep(tokensForRoute);
     // token = warpCore.findToken(origin, routerAddress)!;
-    throw new Error("Multiple tokens found for route");
+    throw new Error('Multiple tokens found for route');
   }
 
   const errors = await warpCore.validateTransfer({
@@ -109,7 +113,7 @@ async function executeDelivery({
     sender: signerAddress,
   });
   if (errors) {
-    console.error("Error validating transfer: ", JSON.stringify(errors));
+    console.error('Error validating transfer: ', JSON.stringify(errors));
   }
 
   // TODO: override hook address for self-relay

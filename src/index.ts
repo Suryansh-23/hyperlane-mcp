@@ -2,9 +2,11 @@ import { GithubRegistry } from '@hyperlane-xyz/registry';
 import {
   ChainMap,
   ChainMetadata,
+  MultiProtocolProvider,
   MultiProvider,
   TokenType,
-  WarpCoreConfigSchema,
+  WarpCore,
+  WarpCoreConfig,
   WarpRouteDeployConfig,
 } from '@hyperlane-xyz/sdk';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -34,9 +36,9 @@ import {
   loadChainDeployConfig,
   runCoreDeploy,
 } from './hyperlaneDeployer.js';
+import logger from './logger.js';
 import { RelayerRunner } from './RunRelayer.js';
 import { ValidatorRunner } from './RunValidator.js';
-import logger from './logger.js';
 
 // Load environment variables from .env file
 config();
@@ -104,7 +106,7 @@ const registry = new LocalRegistry({
 // logger.info(JSON.stringify(await registry.getAddresses()));
 // logger.info(JSON.stringify(await registry.getWarpRoutes()));
 
-const URI_TEMPLATE_STRING = 'hyperlane-warp:///{symbol}/{/chain*}';
+const URI_TEMPLATE_STRING = 'hyperlane-warp://{symbol}/{chain}';
 const URI_TEMPLATE = URITemplate(URI_TEMPLATE_STRING);
 const URI_OBJ_TEMPATE = z.object({
   symbol: z.string(),
@@ -129,10 +131,12 @@ server.server.setRequestHandler(
 );
 
 server.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-  const values = URI_TEMPLATE.fromUri(request.params.uri);
+  const values = URI_TEMPLATE.fromUri(decodeURIComponent(request.params.uri));
   server.server.sendLoggingMessage({
     level: 'info',
-    data: `Parsed URI values: ${JSON.stringify(values)}`,
+    data: `Parsed URI values: ${JSON.stringify(
+      values
+    )} from URI: ${decodeURIComponent(request.params.uri)}`,
   });
 
   const parsed = URI_OBJ_TEMPATE.safeParse(values);
@@ -266,7 +270,7 @@ Parameters: origin=${origin}, destination=${destination}, recipient=${recipient}
 
 server.tool(
   'cross-chain-asset-transfer',
-  'Transfers tokens/assets between multiple blockchain networks using Hyperlane\'s cross-chain infrastructure.\n\n' +
+  "Transfers tokens/assets between multiple blockchain networks using Hyperlane's cross-chain infrastructure.\n\n" +
     'FUNCTIONALITY:\n' +
     '• Moves tokens from one blockchain to another (e.g., USDC from Ethereum to Polygon)\n' +
     '• Supports sequential transfers across multiple chains in a single operation\n' +
@@ -331,17 +335,6 @@ Parameters: symbol=${symbol}, chains=${chains.join(
       };
     }
 
-    const warpCoreConfig = warpRoutes[0]; // Use the first matching config
-
-    server.server.sendLoggingMessage({
-      level: 'info',
-      data: `Found warp core config: ${JSON.stringify(
-        warpCoreConfig,
-        null,
-        2
-      )}`,
-    });
-
     const chainMetadata: ChainMap<ChainMetadata> = Object.fromEntries(
       await Promise.all(
         chains.map(async (chain) => [
@@ -364,6 +357,7 @@ Parameters: symbol=${symbol}, chains=${chains.join(
         )
       ),
     });
+
     server.server.sendLoggingMessage({
       level: 'info',
       data: `MultiProvider initialized with chains: ${JSON.stringify(
@@ -372,6 +366,41 @@ Parameters: symbol=${symbol}, chains=${chains.join(
         2
       )}`,
     });
+
+    let warpCoreConfig: WarpCoreConfig | null = null;
+    for (const route of warpRoutes) {
+      const warpCore = WarpCore.FromConfig(
+        MultiProtocolProvider.fromMultiProvider(multiProvider),
+        route
+      );
+      const tokensForRoute = warpCore.getTokensForRoute(chains[0], chains[1]);
+      if (tokensForRoute.length > 0) {
+        warpCoreConfig = route;
+        break;
+      }
+    }
+
+    if (!warpCoreConfig) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `No valid warp core config found for symbol "${symbol}" and chains [${chains.join(
+              ', '
+            )}]. Please deploy a warp route first using the 'deploy-warp-route' tool.`,
+          },
+        ],
+      };
+    } else {
+      server.server.sendLoggingMessage({
+        level: 'info',
+        data: `Found warp core config: ${JSON.stringify(
+          warpCoreConfig,
+          null,
+          2
+        )}`,
+      });
+    }
 
     server.server.sendLoggingMessage({
       level: 'info',
@@ -398,7 +427,7 @@ Parameters: symbol=${symbol}, chains=${chains.join(
 
     server.server.sendLoggingMessage({
       level: 'info',
-      data: 'Message transfer completed successfully',
+      data: 'Asset transfer completed successfully',
     });
 
     return {
